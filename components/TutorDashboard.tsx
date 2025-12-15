@@ -9,19 +9,26 @@ interface Props {
   onManageVocab: () => void;
 }
 
-export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, onBack, onSettings, onManageVocab }) => {
+export const TutorDashboard: React.FC<Props> = ({
+  onPlanLesson,
+  onViewProgress,
+  onBack,
+  onSettings,
+  onManageVocab
+}) => {
   return (
-    <div className="bg-slate-50">
-      <div className="w-full max-w-4xl mx-auto relative p-6 pb-12">
-        <button 
+    <div className="bg-slate-50 min-h-screen flex flex-col">
+      {/* Scrollable container */}
+      <div className="w-full max-w-4xl mx-auto relative p-6 pb-12 flex-1 overflow-y-auto" style={{ WebkitOverflowScrolling: 'touch' }}>
+        <button
           onClick={onSettings}
           className="absolute top-6 right-6 p-3 rounded-full bg-white shadow-sm border border-slate-200 text-slate-500 hover:text-slate-800 hover:shadow-md transition-all z-10"
           title="Settings & API Key"
         >
           <Settings size={24} />
         </button>
-        
-        <button 
+
+        <button
           onClick={onBack}
           className="mb-8 flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors"
         >
@@ -46,7 +53,9 @@ export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, 
               <PenTool className="text-brand-600 w-8 h-8" />
             </div>
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Plan Lessons</h3>
-            <p className="text-slate-500 mb-auto">Create new learning modules and generate custom exercises for your students.</p>
+            <p className="text-slate-500 mb-auto">
+              Create new learning modules and generate custom exercises for your students.
+            </p>
             <div className="mt-6 flex items-center text-brand-600 font-semibold group-hover:translate-x-1 transition-transform">
               Start Planning →
             </div>
@@ -61,7 +70,9 @@ export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, 
               <BookOpen className="text-green-600 w-8 h-8" />
             </div>
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Vocabulary Lists</h3>
-            <p className="text-slate-500 mb-auto">Upload and manage vocabulary lists for student practice.</p>
+            <p className="text-slate-500 mb-auto">
+              Upload and manage vocabulary lists for student practice.
+            </p>
             <div className="mt-6 flex items-center text-green-600 font-semibold group-hover:translate-x-1 transition-transform">
               Manage Lists →
             </div>
@@ -76,7 +87,9 @@ export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, 
               <BarChart3 className="text-blue-600 w-8 h-8" />
             </div>
             <h3 className="text-2xl font-bold text-slate-800 mb-2">Student Progress</h3>
-            <p className="text-slate-500 mb-auto">View performance analytics, completed exercises, and lesson history.</p>
+            <p className="text-slate-500 mb-auto">
+              View performance analytics, completed exercises, and lesson history.
+            </p>
             <div className="mt-6 flex items-center text-blue-600 font-semibold group-hover:translate-x-1 transition-transform">
               View Reports →
             </div>
