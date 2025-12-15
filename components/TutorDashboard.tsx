@@ -11,8 +11,8 @@ interface Props {
 
 export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, onBack, onSettings, onManageVocab }) => {
   return (
-    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto p-6 min-h-0">
+    <div className="h-full bg-slate-50 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-6 min-h-0 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
         <div className="w-full max-w-4xl mx-auto relative pb-6">
           <button 
             onClick={onSettings}

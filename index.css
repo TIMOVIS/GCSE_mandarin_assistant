@@ -1,3 +1,24 @@
 /* Base styles - Tailwind CSS is loaded via CDN in index.html */
 /* Additional custom styles can be added here */
 
+/* Custom scrollbar for better mobile experience */
+.custom-scrollbar {
+  -webkit-overflow-scrolling: touch;
+  scroll-behavior: smooth;
+}
+
+/* Ensure proper scrolling on mobile devices */
+@media (max-width: 768px) {
+  .custom-scrollbar {
+    overflow-y: auto !important;
+    -webkit-overflow-scrolling: touch;
+  }
+}
+
+/* Fix for iOS Safari viewport height issues */
+@supports (-webkit-touch-callout: none) {
+  .h-screen {
+    height: -webkit-fill-available;
+  }
+}
+
