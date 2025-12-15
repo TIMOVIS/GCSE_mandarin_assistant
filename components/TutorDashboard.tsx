@@ -11,22 +11,23 @@ interface Props {
 
 export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, onBack, onSettings, onManageVocab }) => {
   return (
-    <div className="min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 relative">
-      <button 
-        onClick={onSettings}
-        className="absolute top-6 right-6 p-3 rounded-full bg-white shadow-sm border border-slate-200 text-slate-500 hover:text-slate-800 hover:shadow-md transition-all"
-        title="Settings & API Key"
-      >
-        <Settings size={24} />
-      </button>
-
-      <div className="w-full max-w-4xl">
-        <button 
-          onClick={onBack}
-          className="mb-8 flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors"
-        >
-          <ArrowLeft size={20} /> Back to Login
-        </button>
+    <div className="h-screen bg-slate-50 flex flex-col overflow-hidden">
+      <div className="flex-1 overflow-y-auto p-6 min-h-0">
+        <div className="w-full max-w-4xl mx-auto relative pb-6">
+          <button 
+            onClick={onSettings}
+            className="absolute top-0 right-0 p-3 rounded-full bg-white shadow-sm border border-slate-200 text-slate-500 hover:text-slate-800 hover:shadow-md transition-all z-10"
+            title="Settings & API Key"
+          >
+            <Settings size={24} />
+          </button>
+          
+          <button 
+            onClick={onBack}
+            className="mb-8 flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors"
+          >
+            <ArrowLeft size={20} /> Back to Login
+          </button>
 
         <div className="text-center mb-12">
           <div className="bg-brand-100 p-4 rounded-full inline-block mb-4">
@@ -81,6 +82,7 @@ export const TutorDashboard: React.FC<Props> = ({ onPlanLesson, onViewProgress, 
               View Reports →
             </div>
           </button>
+        </div>
         </div>
       </div>
     </div>
