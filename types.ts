@@ -1,0 +1,98 @@
+
+export interface LearningPoint {
+  id: string;
+  description: string;
+}
+
+export interface Topic {
+  id: string;
+  title: string;
+  points: LearningPoint[];
+}
+
+export interface Stage {
+  id: number;
+  title: string;
+  duration: string;
+  goal: string;
+  topics: Topic[];
+}
+
+export interface Exercise {
+  type: 'quiz' | 'translation' | 'composition';
+  question: string;
+  questionTranslation?: string;
+  answer?: string;
+  options?: string[];
+}
+
+export interface GeneratedContent {
+  learningMaterial: string;
+  exercises: Exercise[];
+}
+
+export interface AssignedLesson {
+  id: string;
+  studentName: string;
+  stageTitle: string;
+  topicTitle: string;
+  pointDescription: string;
+  material: string;
+  exercises: Exercise[];
+  assignedDate: string;
+  completed: boolean;
+  score?: number;
+  userAnswers?: string[]; // Added to store student's specific input
+}
+
+export type ViewState = 
+  | 'login' 
+  | 'tutor-dashboard' 
+  | 'tutor-progress' 
+  | 'settings'
+  | 'onboarding' 
+  | 'curriculum' 
+  | 'editor' 
+  | 'student-dashboard' 
+  | 'student-lesson'
+  | 'student-vocab'
+  | 'vocab-management';
+
+export interface StudentProfile {
+  name: string;
+  stageId: number;
+}
+
+export interface VocabWord {
+  character: string;
+  pinyin: string;
+  meaning: string;
+}
+
+export interface WordDetails extends VocabWord {
+  exampleSentenceCh: string;
+  exampleSentenceEn: string;
+}
+
+export interface VocabProgress {
+  id: string; // studentName_character
+  studentName: string;
+  category: string;
+  word: string; // character
+  pinyin: string;
+  meaning: string;
+  practices: {
+    viewed: number;
+    writing: number;
+    pronunciation: number;
+  };
+  lastPracticed: string;
+}
+
+export interface VocabList {
+  id: string;
+  category: string;
+  characters: string[]; // Array of individual Chinese characters
+  uploadedAt: string;
+  fileName?: string;
+}
