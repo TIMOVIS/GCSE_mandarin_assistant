@@ -401,41 +401,72 @@ export const StudentVocabPractice: React.FC<Props> = ({ studentName, onBack }) =
   // Audio Playback
   const playAudio = async (text: string) => {
     if (audioLoading || !text) {
+      console.log("playAudio blocked:", { audioLoading, text });
       return;
     }
     
     setAudioLoading(true);
     try {
+        console.log("Generating speech for:", text);
         const base64Audio = await generateSpeech(text);
         if (!base64Audio) {
           console.error("No audio returned from generateSpeech");
+          setAudioLoading(false);
           return;
         }
 
+        console.log("Audio generated, length:", base64Audio.length);
+
         // Ensure audio context is ready - create new one if needed or resume existing
         if (!audioContextRef.current) {
+            console.log("Creating new AudioContext");
             audioContextRef.current = new (window.AudioContext || (window as any).webkitAudioContext)({sampleRate: 24000});
         }
         const ctx = audioContextRef.current;
         
+        console.log("AudioContext state:", ctx.state);
+        
         // Resume if suspended (required for user interaction after page load)
         if (ctx.state === 'suspended') {
+          console.log("Resuming suspended AudioContext");
           await ctx.resume();
         }
         
         // Wait a bit to ensure context is ready
         if (ctx.state !== 'running') {
+          console.log("AudioContext not running, attempting resume");
           await ctx.resume();
         }
 
-        const audioBuffer = await decodeAudioData(decode(base64Audio), ctx, 24000, 1);
+        console.log("Decoding audio data");
+        const decodedData = decode(base64Audio);
+        if (decodedData.length === 0) {
+          console.error("Decoded audio data is empty");
+          setAudioLoading(false);
+          return;
+        }
+
+        const audioBuffer = await decodeAudioData(decodedData, ctx, 24000, 1);
+        console.log("Audio buffer created, duration:", audioBuffer.duration);
+        
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
+        
+        // Add error handler
+        source.onended = () => {
+          console.log("Audio playback ended");
+        };
+        
+        source.onerror = (e) => {
+          console.error("Audio source error:", e);
+        };
+        
+        console.log("Starting audio playback");
         source.start(0);
     } catch (e) {
         console.error("Playback failed", e);
-        // Don't show alert, just log - user can try again
+        alert(`Failed to play audio: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
         setAudioLoading(false);
     }
