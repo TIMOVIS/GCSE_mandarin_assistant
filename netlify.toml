@@ -9,7 +9,6 @@
 
 [build.environment]
   NODE_VERSION = "20"
-  # Disable secrets scanning for expected API keys in build output
-  # These are client-side API keys that need to be in the bundle
+  # API keys are now server-side only, so secrets scanning should not find them in build output
   SECRETS_SCAN_SMART_DETECTION_OMIT_VALUES = "true"
 

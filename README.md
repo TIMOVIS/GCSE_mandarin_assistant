@@ -10,43 +10,55 @@ A comprehensive Mandarin learning platform for IGCSE students with AI-powered le
 
 ### Environment Variables
 
-The app uses environment variables for API keys. These should be configured on Netlify (for production) or in a local `.env` file (for development).
+The app uses **server-side Netlify functions** to handle all AI API calls. API keys are stored securely on the server and never exposed to the client.
 
-**Required Environment Variables:**
-- `VITE_GEMINI_API_KEY` - Google Gemini API key (required for AI features)
+**Required Environment Variables (Netlify):**
+- `GEMINI_API_KEY` - Google Gemini API key (required for AI features)
+  - **Note:** Do NOT use `VITE_` prefix - this is server-side only
 
-**Optional Environment Variables:**
-- `VITE_OPENAI_API_KEY` - OpenAI API key (optional, used as fallback for single character pronunciation)
+**Optional Environment Variables (Netlify):**
+- `OPENAI_API_KEY` - OpenAI API key (optional, used as fallback for single character pronunciation)
+  - **Note:** Do NOT use `VITE_` prefix - this is server-side only
 
 ### Netlify Configuration
 
 1. Go to your Netlify site dashboard
 2. Navigate to **Site settings** > **Environment variables**
 3. Add the following variables:
-   - `VITE_GEMINI_API_KEY` = your Gemini API key
-   - `VITE_OPENAI_API_KEY` = your OpenAI API key (optional)
+   - `GEMINI_API_KEY` = your Gemini API key
+   - `OPENAI_API_KEY` = your OpenAI API key (optional)
 
-**Note:** After adding environment variables, you'll need to trigger a new deployment for the changes to take effect.
+**Important:** 
+- Do NOT use `VITE_` prefix - these are server-side variables
+- After adding environment variables, trigger a new deployment
+- All AI calls go through `/.netlify/functions/generate` (server-side)
 
 ### Local Development
+
+For local development, use Netlify CLI to run the functions locally:
 
 1. Install dependencies:
    ```bash
    npm install
    ```
 
-2. Create a `.env` file in the root directory:
+2. Install Netlify CLI (if not already installed):
    ```bash
-   cp .env.example .env
+   npm install -g netlify-cli
    ```
 
-3. Add your API keys to `.env`:
+3. Create a `.env` file in the root directory with your API keys:
    ```
-   VITE_GEMINI_API_KEY=your_gemini_api_key_here
-   VITE_OPENAI_API_KEY=your_openai_api_key_here
+   GEMINI_API_KEY=your_gemini_api_key_here
+   OPENAI_API_KEY=your_openai_api_key_here
    ```
 
-4. Run the app:
+4. Run with Netlify CLI (runs both frontend and functions):
+   ```bash
+   netlify dev
+   ```
+
+   Or run frontend only (functions won't work):
    ```bash
    npm run dev
    ```

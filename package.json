@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@google/genai": "^1.33.0",
+    "@netlify/functions": "^5.1.2",
     "@supabase/supabase-js": "^2.39.0",
     "lucide-react": "^0.300.0",
     "openai": "^6.15.0",

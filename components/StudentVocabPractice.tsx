@@ -195,8 +195,9 @@ export const StudentVocabPractice: React.FC<Props> = ({ studentName, onBack }) =
         if (words.length === 0) {
           // Check if API key is missing
           // API key is now from environment variables (configured on Netlify)
-          const apiKey = import.meta.env.VITE_GEMINI_API_KEY || localStorage.getItem('mandarin_app_api_key') || '';
-          if (!apiKey) {
+          // API keys are now handled server-side via Netlify function
+          // No need to check for API key here
+          if (false) {
             setListError("No vocabulary list found for this category. Please ask your tutor to upload a vocabulary list, or configure an API key in Settings.");
           } else {
             setListError("Failed to generate vocabulary. Please try again or check your API key.");

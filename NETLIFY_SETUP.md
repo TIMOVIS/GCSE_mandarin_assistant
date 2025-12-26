@@ -1,6 +1,6 @@
 # Netlify Environment Variables Setup
 
-This app uses environment variables for API keys. Follow these steps to configure them on Netlify:
+This app uses server-side Netlify functions to handle all AI API calls. API keys are stored securely on the server and never exposed to the client.
 
 ## Required Steps
 
@@ -14,13 +14,13 @@ This app uses environment variables for API keys. Follow these steps to configur
 
 3. **Add Required Variables**
 
-   **VITE_GEMINI_API_KEY** (Required)
-   - Key: `VITE_GEMINI_API_KEY`
+   **GEMINI_API_KEY** (Required)
+   - Key: `GEMINI_API_KEY` (NO VITE_ prefix - this is server-side only)
    - Value: Your Google Gemini API key (starts with `AIzaSy...`)
    - Scope: All scopes (or specific if needed)
 
-   **VITE_OPENAI_API_KEY** (Optional)
-   - Key: `VITE_OPENAI_API_KEY`
+   **OPENAI_API_KEY** (Optional)
+   - Key: `OPENAI_API_KEY` (NO VITE_ prefix - this is server-side only)
    - Value: Your OpenAI API key
    - Scope: All scopes (or specific if needed)
    - Note: Only needed for better single character pronunciation
@@ -28,22 +28,25 @@ This app uses environment variables for API keys. Follow these steps to configur
 4. **Redeploy**
    - After adding variables, go to **Deploys** tab
    - Click **Trigger deploy** > **Deploy site**
-   - This ensures the new environment variables are included in the build
+   - This ensures the new environment variables are available to the Netlify function
 
 ## Important Notes
 
-- **Variable Names**: Must start with `VITE_` to be exposed to client-side code in Vite
+- **Variable Names**: Do NOT use `VITE_` prefix - these are server-side only variables
+- **Security**: API keys are stored server-side and never exposed to the client
 - **Redeploy Required**: Environment variables are only available after a new deployment
-- **Security**: These variables are exposed to the client-side code, so they will be visible in the browser. This is expected for this type of application.
+- **Function Location**: All AI calls go through `/.netlify/functions/generate`
 
 ## Local Development
 
-For local development, create a `.env` file in the root directory:
+For local development, you can test the Netlify function locally using Netlify CLI:
 
-```
-VITE_GEMINI_API_KEY=your_gemini_api_key_here
-VITE_OPENAI_API_KEY=your_openai_api_key_here
+```bash
+npm install -g netlify-cli
+netlify dev
 ```
 
-The `.env` file is already in `.gitignore` and won't be committed to the repository.
+Or set environment variables in your shell before running `npm run dev` (though the function won't work locally without Netlify CLI).
+
+The `.env` file is in `.gitignore` and won't be committed to the repository.
 

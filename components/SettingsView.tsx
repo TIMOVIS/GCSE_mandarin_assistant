@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowLeft, Key, Save, Trash2, AlertTriangle, CheckCircle2, Cloud, Database } from 'lucide-react';
+import { checkApiKeys } from '../services/geminiService';
 
 interface Props {
   onBack: () => void;
@@ -9,11 +10,21 @@ export const SettingsView: React.FC<Props> = ({ onBack }) => {
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [saved, setSaved] = useState(false);
+  const [apiKeyStatus, setApiKeyStatus] = useState<{ geminiConfigured: boolean; openaiConfigured: boolean } | null>(null);
+  const [loadingKeys, setLoadingKeys] = useState(true);
 
   useEffect(() => {
     // Pre-fill with defaults if local storage is empty, so user sees the active configuration
     setSupabaseUrl(localStorage.getItem('supabase_url') || 'https://ujyjsmlasctasluxpuyn.supabase.co');
     setSupabaseKey(localStorage.getItem('supabase_key') || 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqeWpzbWxhc2N0YXNsdXhwdXluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0ODM3MDAsImV4cCI6MjA2MTA1OTcwMH0.0GXUKWhJ8Ck9zSkslKvrKOhFnsi-5jO0TT4qLAH5yf4');
+    
+    // Check API key status
+    checkApiKeys().then(status => {
+      setApiKeyStatus(status);
+      setLoadingKeys(false);
+    }).catch(() => {
+      setLoadingKeys(false);
+    });
   }, []);
 
   const handleSave = (e: React.FormEvent) => {
@@ -66,30 +77,38 @@ export const SettingsView: React.FC<Props> = ({ onBack }) => {
                   <div>
                     <p className="font-semibold text-slate-700">API Keys Status</p>
                     <p className="text-xs text-slate-500 mt-1">
-                      API keys are managed via Netlify environment variables. No manual configuration needed.
+                      API keys are managed via Netlify environment variables (GEMINI_API_KEY, OPENAI_API_KEY). No manual configuration needed.
                     </p>
                   </div>
                 </div>
-                {import.meta.env.VITE_GEMINI_API_KEY ? (
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
-                    <CheckCircle2 size={14} />
-                    <span>Gemini API Key: Configured</span>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded">
-                    <AlertTriangle size={14} />
-                    <span>Gemini API Key: Not configured (check Netlify environment variables)</span>
-                  </div>
-                )}
-                {import.meta.env.VITE_OPENAI_API_KEY ? (
-                  <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
-                    <CheckCircle2 size={14} />
-                    <span>OpenAI API Key: Configured</span>
-                  </div>
-                ) : (
+                {loadingKeys ? (
                   <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded">
-                    <span>OpenAI API Key: Optional (not configured)</span>
+                    <span>Checking API key status...</span>
                   </div>
+                ) : (
+                  <>
+                    {apiKeyStatus?.geminiConfigured ? (
+                      <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
+                        <CheckCircle2 size={14} />
+                        <span>Gemini API Key: Configured</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-amber-700 bg-amber-50 px-3 py-2 rounded">
+                        <AlertTriangle size={14} />
+                        <span>Gemini API Key: Not configured (check Netlify environment variables: GEMINI_API_KEY)</span>
+                      </div>
+                    )}
+                    {apiKeyStatus?.openaiConfigured ? (
+                      <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
+                        <CheckCircle2 size={14} />
+                        <span>OpenAI API Key: Configured</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded">
+                        <span>OpenAI API Key: Optional (not configured - set OPENAI_API_KEY in Netlify if needed)</span>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             </div>
