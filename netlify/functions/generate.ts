@@ -112,19 +112,68 @@ export const handler: Handler = async (event, context) => {
         const { stage, topic, point } = params;
         const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
         
-        const prompt = `You are an expert IGCSE Mandarin tutor. Generate comprehensive learning material for:
-Stage: ${stage}
-Topic: ${topic}
-Learning Point: ${point}
+        const prompt = `You are a friendly and enthusiastic IGCSE Mandarin tutor speaking to a teenager. Your goal is to make learning fun and easy to understand.
 
-Create engaging, structured content that helps students understand this concept. Use markdown formatting with headers (##, ###) and separators "---" between sections.`;
+Generate learning material for:
+- Stage: ${stage}
+- Topic: ${topic}
+- Learning Point: ${point}
+
+**IMPORTANT GUIDELINES:**
+
+1. **Language Style:**
+   - Use simple, conversational English (like talking to a friend)
+   - Avoid complex academic jargon
+   - Be encouraging and positive
+   - Use short sentences and clear explanations
+   - Add enthusiasm! Use exclamation marks and friendly phrases like "Let's learn together!" or "This is so cool!"
+
+2. **Structure:**
+   - Use markdown headers (##, ###) for sections
+   - Use "---" on a new line to separate each major section
+   - Break content into small, digestible chunks
+
+3. **Examples are CRITICAL:**
+   - Include AT LEAST 3-5 examples for every concept you explain
+   - Show examples in this format: **Chinese Characters (Pinyin)** - *English Meaning*
+   - Use real-world, relatable examples that teenagers can connect with
+   - Include example sentences showing how to use the concept
+   - Make examples fun and memorable (use names, places, or situations teens relate to)
+
+4. **Content Requirements:**
+   - Start with a friendly introduction that gets students excited
+   - Explain concepts step-by-step in simple terms
+   - Use analogies or comparisons to make things easier to understand
+   - Include visual descriptions when helpful
+   - End each section with a quick summary or "Key Takeaway"
+
+5. **Format:**
+   - Every time you use Chinese text, ALWAYS provide: **Characters (Pinyin)** - *English*
+   - Use bullet points for lists
+   - Use bold text for important terms
+   - Keep paragraphs short (2-3 sentences max)
+
+**Example of good content style:**
+"Hey! Let's learn about greetings! 🎉 This is super useful - you'll use these every day!
+
+**你好 (nǐ hǎo)** - *Hello*
+This is the most common greeting! Think of it like saying "hi" to your friends.
+
+**Examples:**
+- When you meet a friend: **你好！(nǐ hǎo!)** - *Hello!*
+- When you see your teacher: **老师，你好！(lǎo shī, nǐ hǎo!)** - *Teacher, hello!*
+- In the morning: **早上好 (zǎo shàng hǎo)** - *Good morning!*
+
+See how easy that is? Now you can greet anyone! 😊"
+
+Remember: Make it fun, simple, and full of examples!`;
         
         const result = await callWithRetry(async () => {
           const response = await ai.models.generateContent({
             model: 'gemini-2.5-flash',
             contents: prompt,
             config: {
-              maxOutputTokens: 4000, 
+              maxOutputTokens: 6000, // Increased for more examples
             }
           });
           return response.text;
