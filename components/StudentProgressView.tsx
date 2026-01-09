@@ -69,16 +69,16 @@ export const StudentProgressView: React.FC<Props> = ({ onBack }) => {
             }
         });
 
-        // Calculate averages
+        // Calculate averages (score is now a percentage 0-100)
         Object.keys(stats).forEach(name => {
             const completed = stats[name].lessons.filter(l => l.completed);
             if (completed.length > 0) {
                 const totalScorePercent = completed.reduce((acc, l) => {
-                const max = l.exercises.length || 1;
-                const score = l.score || 0;
-                return acc + (score / max);
+                    // Score is already a percentage (0-100) from the new evaluation system
+                    const score = l.score || 0;
+                    return acc + score;
                 }, 0);
-                stats[name].averageScore = Math.round((totalScorePercent / completed.length) * 100);
+                stats[name].averageScore = Math.round(totalScorePercent / completed.length);
             }
         });
 
@@ -174,8 +174,12 @@ export const StudentProgressView: React.FC<Props> = ({ onBack }) => {
                                     </div>
                                     {lesson.completed ? (
                                         <div className="flex items-center gap-2">
-                                            <span className="flex-shrink-0 bg-green-100 text-green-700 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1">
-                                                {lesson.score}/{lesson.exercises.length}
+                                            <span className={`flex-shrink-0 text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${
+                                              (lesson.score || 0) >= 80 ? 'bg-green-100 text-green-700' : 
+                                              (lesson.score || 0) >= 60 ? 'bg-yellow-100 text-yellow-700' : 
+                                              'bg-red-100 text-red-700'
+                                            }`}>
+                                                {lesson.score || 0}%
                                             </span>
                                             <button 
                                                 onClick={() => setSelectedLesson(lesson)}
@@ -252,30 +256,53 @@ export const StudentProgressView: React.FC<Props> = ({ onBack }) => {
                     <div className="space-y-4">
                         {selectedLesson.exercises.map((ex, idx) => {
                              const userAnswers = selectedLesson.userAnswers || [];
-                             const userAns = (userAnswers[idx] || '').trim().toLowerCase();
-                             const correctAns = (ex.answer || '').trim().toLowerCase();
-                             const isCorrect = userAns === correctAns;
+                             const exerciseScores = selectedLesson.exerciseScores || [];
+                             const exerciseFeedback = selectedLesson.exerciseFeedback || [];
+                             const exScore = exerciseScores[idx] || 0;
+                             const exFeedback = exerciseFeedback[idx] || '';
+                             const userAns = userAnswers[idx] || '(No answer)';
+                             const borderColor = exScore === 100 ? 'border-green-300' : exScore >= 50 ? 'border-yellow-300' : 'border-red-300';
+                             const bgColor = exScore === 100 ? 'bg-green-50' : exScore >= 50 ? 'bg-yellow-50' : 'bg-red-50';
+                             const scoreColor = exScore === 100 ? 'text-green-600' : exScore >= 50 ? 'text-yellow-600' : 'text-red-600';
+                             const iconColor = exScore === 100 ? 'text-green-500' : exScore >= 50 ? 'text-yellow-500' : 'text-red-500';
 
                              return (
-                                <div key={idx} className={`bg-white p-5 rounded-xl border ${isCorrect ? 'border-green-200 shadow-sm' : 'border-red-200 shadow-sm'}`}>
+                                <div key={idx} className={`bg-white p-5 rounded-xl border-2 ${borderColor} ${bgColor}`}>
                                     <div className="flex justify-between items-start mb-3">
                                         <div className="flex items-start gap-3">
-                                            <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${isCorrect ? 'bg-green-500' : 'bg-red-500'}`}>
+                                            <div className={`mt-0.5 w-6 h-6 rounded-full flex items-center justify-center text-white text-xs font-bold ${
+                                              exScore === 100 ? 'bg-green-500' : exScore >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                                            }`}>
                                                 {idx + 1}
                                             </div>
                                             <h4 className="font-bold text-slate-800 chinese-text text-lg">{ex.question}</h4>
                                         </div>
-                                        {isCorrect ? <Check className="text-green-500" size={20}/> : <XCircle className="text-red-500" size={20} />}
+                                        <div className="flex flex-col items-end gap-1">
+                                            <span className={`font-bold text-lg ${scoreColor}`}>{exScore}%</span>
+                                            {exScore === 100 ? (
+                                              <Check className={iconColor} size={20} />
+                                            ) : (
+                                              <XCircle className={iconColor} size={20} />
+                                            )}
+                                        </div>
                                     </div>
                                     
-                                    <div className="ml-9 grid grid-cols-1 sm:grid-cols-2 gap-4">
-                                        <div className={`p-3 rounded-lg ${isCorrect ? 'bg-green-50' : 'bg-red-50'}`}>
+                                    <div className="ml-9 space-y-3">
+                                        <div className={`p-3 rounded-lg ${exScore === 100 ? 'bg-green-100' : exScore >= 50 ? 'bg-yellow-100' : 'bg-red-100'}`}>
                                             <p className="text-xs font-bold uppercase tracking-wider mb-1 opacity-60">Student Answer</p>
-                                            <p className={`font-medium chinese-text ${isCorrect ? 'text-green-800' : 'text-red-800'}`}>
-                                                {userAnswers[idx] || <span className="italic text-slate-400">(No answer)</span>}
+                                            <p className={`font-medium chinese-text ${
+                                              exScore === 100 ? 'text-green-800' : exScore >= 50 ? 'text-yellow-800' : 'text-red-800'
+                                            }`}>
+                                                {userAns}
                                             </p>
                                         </div>
-                                        {!isCorrect && (
+                                        {exFeedback && (
+                                            <div className="p-3 rounded-lg bg-white border border-slate-200">
+                                                <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Feedback</p>
+                                                <p className="text-sm text-slate-700">{exFeedback}</p>
+                                            </div>
+                                        )}
+                                        {ex.answer && (
                                             <div className="p-3 rounded-lg bg-slate-100">
                                                 <p className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Correct Answer</p>
                                                 <p className="font-medium text-slate-800 chinese-text">{ex.answer}</p>

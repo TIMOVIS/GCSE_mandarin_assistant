@@ -436,6 +436,83 @@ Answer their questions about this material or Mandarin in general. Keep answers 
         };
       }
 
+      case 'evaluateAnswer': {
+        const { question, correctAnswer, studentAnswer, questionType } = params;
+        
+        if (!question || correctAnswer === undefined || studentAnswer === undefined) {
+          return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'Missing required parameters: question, correctAnswer, studentAnswer' }),
+          };
+        }
+
+        if (!geminiApiKey) {
+          return {
+            statusCode: 500,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'GEMINI_API_KEY not configured' }),
+          };
+        }
+
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+        
+        const prompt = `You are an IGCSE Mandarin teacher evaluating a student's answer. Evaluate the student's answer and provide a percentage score from 0 to 100.
+
+Question: ${question}
+Question Type: ${questionType || 'general'}
+Correct Answer: ${correctAnswer}
+Student's Answer: ${studentAnswer}
+
+**Evaluation Guidelines:**
+- Give 100% if the answer is exactly correct or demonstrates full understanding
+- Give partial credit (e.g., 50%, 75%, 80%, 90%) if the answer is partially correct:
+  - 90-95%: Almost perfect, minor spelling/formatting issues
+  - 75-85%: Most of the answer is correct, missing minor details
+  - 50-70%: Partially correct, shows some understanding but incomplete
+  - 25-45%: Some relevant information but mostly incorrect
+  - 0-20%: Mostly or completely incorrect
+- Consider these factors:
+  - Correctness of Chinese characters/words
+  - Correctness of pinyin (if applicable)
+  - Meaning/translation accuracy
+  - Grammar and sentence structure (if applicable)
+  - Overall understanding demonstrated
+
+Return ONLY a JSON object with this exact format:
+{
+  "score": <number from 0 to 100>,
+  "feedback": "<brief explanation of why this score was given>"
+}
+
+Do not include any other text, just the JSON object.`;
+
+        const result = await callWithRetry(async () => {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              maxOutputTokens: 500,
+            }
+          });
+          return response.text;
+        });
+
+        let text = result || "";
+        const parsed = safeJsonParse(text, { score: 0, feedback: 'Unable to evaluate answer.' });
+        
+        // Ensure score is between 0 and 100
+        const score = Math.max(0, Math.min(100, Math.round(parsed.score || 0)));
+        const feedback = parsed.feedback || 'Evaluation completed.';
+
+        return {
+          statusCode: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({ result: { score, feedback } }),
+        };
+      }
+
       case 'check-keys': {
         return {
           statusCode: 200,

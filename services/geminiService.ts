@@ -154,3 +154,31 @@ export const checkApiKeys = async (): Promise<{ geminiConfigured: boolean; opena
     return { geminiConfigured: false, openaiConfigured: false };
   }
 };
+
+// Evaluate student answer and return percentage score (0-100)
+export const evaluateAnswer = async (
+  question: string,
+  correctAnswer: string,
+  studentAnswer: string,
+  questionType?: string
+): Promise<{ score: number; feedback: string }> => {
+  try {
+    const result = await callNetlifyFunction('evaluateAnswer', { 
+      question, 
+      correctAnswer, 
+      studentAnswer,
+      questionType 
+    });
+    return result || { score: 0, feedback: 'Unable to evaluate answer.' };
+  } catch (error) {
+    console.error("Evaluate Answer Error:", error);
+    // Fallback to simple binary comparison if AI evaluation fails
+    const normalizedStudent = studentAnswer.trim().toLowerCase();
+    const normalizedCorrect = correctAnswer.trim().toLowerCase();
+    const isCorrect = normalizedStudent === normalizedCorrect;
+    return { 
+      score: isCorrect ? 100 : 0, 
+      feedback: isCorrect ? 'Answer is correct.' : 'Answer is incorrect.' 
+    };
+  }
+};

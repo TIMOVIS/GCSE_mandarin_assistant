@@ -41,8 +41,10 @@ export interface AssignedLesson {
   exercises: Exercise[];
   assignedDate: string;
   completed: boolean;
-  score?: number;
+  score?: number; // Total score (sum of exercise scores or count of correct answers)
   userAnswers?: string[]; // Added to store student's specific input
+  exerciseScores?: number[]; // Percentage score (0-100) for each exercise
+  exerciseFeedback?: string[]; // AI-generated feedback for each exercise
 }
 
 export type ViewState = 
