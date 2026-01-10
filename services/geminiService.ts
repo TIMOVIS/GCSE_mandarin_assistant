@@ -163,22 +163,70 @@ export const evaluateAnswer = async (
   questionType?: string
 ): Promise<{ score: number; feedback: string }> => {
   try {
+    console.log('[EvaluateAnswer] Calling Netlify function with:', {
+      question: question.substring(0, 50),
+      correctAnswer: correctAnswer.substring(0, 50),
+      studentAnswer: studentAnswer.substring(0, 50),
+      questionType
+    });
+    
     const result = await callNetlifyFunction('evaluateAnswer', { 
       question, 
       correctAnswer, 
       studentAnswer,
       questionType 
     });
-    return result || { score: 0, feedback: 'Unable to evaluate answer.' };
-  } catch (error) {
-    console.error("Evaluate Answer Error:", error);
-    // Fallback to simple binary comparison if AI evaluation fails
+    
+    console.log('[EvaluateAnswer] Netlify function returned:', result);
+    
+    // Check if result has expected structure
+    if (result && typeof result === 'object' && typeof result.score === 'number') {
+      return result;
+    } else if (result && result.score !== undefined) {
+      // Try to convert score to number if it's a string
+      const score = typeof result.score === 'string' ? parseInt(result.score, 10) : result.score;
+      return {
+        score: isNaN(score) ? 0 : Math.max(0, Math.min(100, Math.round(score))),
+        feedback: result.feedback || 'Evaluation completed.'
+      };
+    }
+    
+    console.error('[EvaluateAnswer] Invalid result structure:', result);
+    throw new Error('Invalid result structure from evaluation function');
+  } catch (error: any) {
+    console.error("[EvaluateAnswer] Error:", error);
+    console.error("[EvaluateAnswer] Error details:", {
+      message: error?.message,
+      stack: error?.stack
+    });
+    
+    // Fallback to similarity-based scoring instead of binary
     const normalizedStudent = studentAnswer.trim().toLowerCase();
     const normalizedCorrect = correctAnswer.trim().toLowerCase();
-    const isCorrect = normalizedStudent === normalizedCorrect;
+    
+    // Simple similarity check for partial credit
+    if (normalizedStudent === normalizedCorrect) {
+      return { 
+        score: 100, 
+        feedback: 'Answer is correct.' 
+      };
+    }
+    
+    // Calculate similarity for partial credit
+    if (normalizedStudent.length > 0 && normalizedCorrect.length > 0) {
+      const matchingChars = [...normalizedCorrect].filter(char => normalizedStudent.includes(char)).length;
+      const similarity = (matchingChars / Math.max(normalizedCorrect.length, normalizedStudent.length)) * 100;
+      const partialScore = Math.round(similarity);
+      
+      return {
+        score: Math.max(10, Math.min(90, partialScore)), // Cap between 10-90% for partial answers
+        feedback: `Partial credit: ${partialScore}% of the answer is correct. ${partialScore >= 50 ? 'Good effort!' : 'Keep practicing!'}`
+      };
+    }
+    
     return { 
-      score: isCorrect ? 100 : 0, 
-      feedback: isCorrect ? 'Answer is correct.' : 'Answer is incorrect.' 
+      score: 0, 
+      feedback: 'Answer is incorrect. Please try again.' 
     };
   }
 };

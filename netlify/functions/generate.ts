@@ -507,30 +507,99 @@ Return ONLY a JSON object with this exact format:
 
 Do not include any other text, just the JSON object.`;
 
-        const result = await callWithRetry(async () => {
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 500,
-            }
+        try {
+          const result = await callWithRetry(async () => {
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: prompt,
+              config: {
+                responseMimeType: 'application/json',
+                maxOutputTokens: 500,
+              }
+            });
+            
+            // Use same pattern as other functions
+            return response.text;
           });
-          return response.text;
-        });
 
-        let text = result || "";
-        const parsed = safeJsonParse(text, { score: 0, feedback: 'Unable to evaluate answer.' });
-        
-        // Ensure score is between 0 and 100
-        const score = Math.max(0, Math.min(100, Math.round(parsed.score || 0)));
-        const feedback = parsed.feedback || 'Evaluation completed.';
+          let text = result || "";
+          console.log('[EvaluateAnswer] Raw response:', text.substring(0, 500));
+          
+          // Use a proper fallback object
+          const fallbackResult = { score: 0, feedback: 'Unable to parse AI evaluation response.' };
+          const parsed = safeJsonParse(text, fallbackResult);
+          
+          // Check if parsing failed (returned fallback) or if score is missing
+          if (!parsed || typeof parsed !== 'object' || parsed.score === undefined || parsed.score === null) {
+            console.error('[EvaluateAnswer] Failed to parse response or missing score field.');
+            console.error('[EvaluateAnswer] Parsed result:', parsed);
+            console.error('[EvaluateAnswer] Original text:', text);
+            
+            // Try to extract score and feedback from text using regex as fallback
+            let score = 0;
+            let feedback = 'Unable to parse AI evaluation. Please try again.';
+            
+            // Try to find score in text using regex (more flexible pattern)
+            const scoreMatch = text.match(/["']?score["']?\s*[:=]\s*(\d+)/i);
+            if (scoreMatch && scoreMatch[1]) {
+              score = parseInt(scoreMatch[1], 10);
+              console.log('[EvaluateAnswer] Extracted score from regex:', score);
+            }
+            
+            // Try to find feedback (more flexible pattern)
+            const feedbackMatch = text.match(/["']?feedback["']?\s*[:=]\s*["']([^"']+)["']/i);
+            if (feedbackMatch && feedbackMatch[1]) {
+              feedback = feedbackMatch[1];
+              console.log('[EvaluateAnswer] Extracted feedback from regex:', feedback);
+            }
+            
+            // If we still don't have a score, try a simple heuristic based on answer similarity
+            if (score === 0 && studentAnswer && correctAnswer) {
+              const studentLower = studentAnswer.trim().toLowerCase();
+              const correctLower = correctAnswer.trim().toLowerCase();
+              
+              // Simple partial credit: if student answer contains some characters from correct answer
+              if (studentLower.length > 0 && correctLower.length > 0) {
+                const matchingChars = [...correctLower].filter(char => studentLower.includes(char)).length;
+                const similarity = (matchingChars / Math.max(correctLower.length, studentLower.length)) * 100;
+                score = Math.round(similarity);
+                feedback = `Partial credit based on answer similarity. Score: ${score}%`;
+                console.log('[EvaluateAnswer] Using similarity-based scoring:', score);
+              }
+            }
+            
+            score = Math.max(0, Math.min(100, Math.round(score || 0)));
+            
+            return {
+              statusCode: 200,
+              headers: corsHeaders,
+              body: JSON.stringify({ result: { score, feedback } }),
+            };
+          }
+          
+          // Ensure score is between 0 and 100
+          const score = Math.max(0, Math.min(100, Math.round(parsed.score || 0)));
+          const feedback = parsed.feedback || 'Evaluation completed.';
 
-        return {
-          statusCode: 200,
-          headers: corsHeaders,
-          body: JSON.stringify({ result: { score, feedback } }),
-        };
+          return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify({ result: { score, feedback } }),
+          };
+        } catch (error: any) {
+          console.error('[EvaluateAnswer] Error during evaluation:', error);
+          // Return a fallback response instead of throwing
+          return {
+            statusCode: 200,
+            headers: corsHeaders,
+            body: JSON.stringify({ 
+              result: { 
+                score: 0, 
+                feedback: `Evaluation error: ${error?.message || 'Unknown error'}. Please try again.` 
+              } 
+            }),
+          };
+        }
       }
 
       case 'check-keys': {
