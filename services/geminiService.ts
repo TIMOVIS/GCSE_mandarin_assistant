@@ -1,7 +1,7 @@
 // All AI calls now go through Netlify function at /.netlify/functions/generate
 // API keys are stored securely on the server and never exposed to the client
 
-import { Exercise, VocabWord, WordDetails } from "../types";
+import { Exercise, Skill, VocabWord, WordDetails } from "../types";
 
 // Helper to call the Netlify function
 const callNetlifyFunction = async (action: string, params: any): Promise<any> => {
@@ -62,6 +62,27 @@ export const generateExercises = async (
     console.error("Gemini API Error (Exercises):", error);
     return [];
   }
+};
+
+// Exercises for one skill, in the formats the tutor ticked, using their chosen words
+export const generateSkillExercises = async (params: {
+  skill: Skill;
+  formatIds: string[];
+  words: { word: string; pinyin: string; meaning: string }[];
+  stage: string;
+  count: number;
+  focus: string;
+}): Promise<Exercise[]> => {
+  const result = await callNetlifyFunction('generateSkillExercises', params);
+  return Array.isArray(result) ? result : [];
+};
+
+// Fills in pinyin, meaning and tags for words the tutor uploaded
+export const annotateWords = async (
+  words: { word: string; pinyin: string; meaning: string }[]
+): Promise<{ word: string; pinyin: string; meaning: string; tags: string[] }[]> => {
+  const result = await callNetlifyFunction('annotateWords', { words });
+  return Array.isArray(result) ? result : [];
 };
 
 export const generateImage = async (context: string): Promise<string | null> => {

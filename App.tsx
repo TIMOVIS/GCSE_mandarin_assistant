@@ -1,8 +1,9 @@
 
 import React, { useState } from 'react';
-import { ViewState, StudentProfile, Stage, Topic, LearningPoint, AssignedLesson } from './types';
+import { ViewState, StudentProfile, Stage, Topic, LearningPoint, AssignedLesson, Student } from './types';
 import { LoginScreen } from './components/LoginScreen';
 import { TutorDashboard } from './components/TutorDashboard';
+import { TutorStudentView } from './components/tutor/TutorStudentView';
 import { StudentProgressView } from './components/StudentProgressView';
 import { StudentOnboarding } from './components/StudentOnboarding';
 import { StageCurriculum } from './components/StageCurriculum';
@@ -21,6 +22,7 @@ const App: React.FC = () => {
   const [selectedStage, setSelectedStage] = useState<Stage | null>(null);
   const [selectedTopic, setSelectedTopic] = useState<Topic | null>(null);
   const [selectedPoint, setSelectedPoint] = useState<LearningPoint | null>(null);
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   
   // Student View State
   const [studentName, setStudentName] = useState<string>('');
@@ -93,6 +95,7 @@ const App: React.FC = () => {
     setProfile(null);
     setStudentName('');
     setActiveLesson(null);
+    setSelectedStudent(null);
     setView('login');
   };
 
@@ -107,11 +110,20 @@ const App: React.FC = () => {
 
       {view === 'tutor-dashboard' && (
         <TutorDashboard 
+          onSelectStudent={(student) => { setSelectedStudent(student); setView('tutor-student'); }}
           onPlanLesson={handlePlanLesson}
           onViewProgress={handleViewProgress}
           onBack={handleLogout}
           onSettings={handleSettings}
           onManageVocab={handleManageVocab}
+        />
+      )}
+
+      {view === 'tutor-student' && selectedStudent && (
+        <TutorStudentView
+          key={selectedStudent.id}
+          student={selectedStudent}
+          onBack={() => setView('tutor-dashboard')}
         />
       )}
 

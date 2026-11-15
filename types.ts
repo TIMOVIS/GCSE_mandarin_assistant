@@ -19,7 +19,10 @@ export interface Stage {
 }
 
 export interface Exercise {
-  type: 'quiz' | 'translation' | 'composition';
+  type: 'quiz' | 'translation' | 'composition' | 'fill_in_the_blank' | 'speaking';
+  format?: string; // id from data/exerciseFormats.ts, when generated from the tutor's Exercises tab
+  audioText?: string; // Chinese text the student hears instead of reads (listening)
+  passage?: string; // Chinese text shown above the question (reading)
   question: string;
   questionTranslation?: string;
   answer?: string;
@@ -31,8 +34,14 @@ export interface GeneratedContent {
   exercises: Exercise[];
 }
 
+export type Skill = 'listening' | 'speaking' | 'reading' | 'writing';
+
 export interface AssignedLesson {
   id: string;
+  skill?: Skill; // Category shown to the student; inferred when missing (older lessons)
+  studentId?: string; // students.id in Supabase
+  audioUrl?: string; // Recording attached to the whole lesson
+  userAudio?: string[]; // Student's recording URL per exercise (speaking)
   studentName: string;
   stageTitle: string;
   topicTitle: string;
@@ -53,6 +62,7 @@ export interface AssignedLesson {
 export type ViewState = 
   | 'login' 
   | 'tutor-dashboard' 
+  | 'tutor-student'
   | 'tutor-progress' 
   | 'settings'
   | 'onboarding' 
@@ -100,4 +110,23 @@ export interface VocabList {
   characters: string[]; // Array of individual Chinese characters
   uploadedAt: string;
   fileName?: string;
+}
+
+export interface Student {
+  id: string;
+  name: string;
+  tutorId?: string;
+  age?: number | null;
+  schoolYear?: string;
+  levels: Partial<Record<Skill, number>>; // Curriculum stage (1-6) per skill
+}
+
+export interface WordBankEntry {
+  id: string;
+  tutorId?: string;
+  word: string; // A word or a phrase
+  pinyin: string;
+  meaning: string;
+  tags: string[]; // Labels from data/wordTags.ts
+  createdAt?: string;
 }

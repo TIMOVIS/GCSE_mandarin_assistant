@@ -1,8 +1,16 @@
 
 import React, { useEffect, useState } from 'react';
-import { AssignedLesson } from '../types';
+import { AssignedLesson, Skill } from '../types';
 import { getLessonsForStudent } from '../services/storage';
-import { BookOpen, CheckCircle, Clock, LogOut, Loader2, RefreshCw, Languages } from 'lucide-react';
+import { SKILLS, getLessonSkill } from '../services/skills';
+import { BookOpen, CheckCircle, Clock, LogOut, Loader2, RefreshCw, Languages, Headphones, Mic, PenLine } from 'lucide-react';
+
+const SKILL_STYLE: Record<Skill, { icon: React.ElementType; chip: string }> = {
+  listening: { icon: Headphones, chip: 'bg-purple-100 text-purple-600' },
+  speaking: { icon: Mic, chip: 'bg-orange-100 text-orange-600' },
+  reading: { icon: BookOpen, chip: 'bg-blue-100 text-blue-600' },
+  writing: { icon: PenLine, chip: 'bg-emerald-100 text-emerald-600' },
+};
 
 interface Props {
   studentName: string;
@@ -77,7 +85,7 @@ export const StudentDashboard: React.FC<Props> = ({ studentName, onSelectLesson,
             </button>
         </div>
 
-        <h2 className="text-xl font-bold text-slate-800 mb-4">Assigned Lessons</h2>
+        <h2 className="text-xl font-bold text-slate-800 mb-4">Assigned Exercises</h2>
 
         {loading ? (
            <div className="flex justify-center items-center h-64">
@@ -92,8 +100,36 @@ export const StudentDashboard: React.FC<Props> = ({ studentName, onSelectLesson,
             <p className="text-slate-500 mt-2">Ask your tutor to assign you some work.</p>
           </div>
         ) : (
+          <div className="space-y-8">
+          {SKILLS.map(({ id, label }) => {
+            const { icon: Icon, chip } = SKILL_STYLE[id];
+            // Keep each lesson's overall number so it doesn't change with grouping
+            const inSkill = lessons
+              .map((lesson, index) => ({ lesson, index }))
+              .filter(({ lesson }) => getLessonSkill(lesson) === id);
+            const todo = inSkill.filter(({ lesson }) => !lesson.completed).length;
+
+            return (
+            <section key={id}>
+              <div className="flex items-center gap-3 mb-3">
+                <div className={`p-2 rounded-lg ${chip}`}>
+                  <Icon size={18} />
+                </div>
+                <h3 className="text-lg font-bold text-slate-800">{label}</h3>
+                {inSkill.length > 0 && (
+                  <span className="text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full">
+                    {todo > 0 ? `${todo} to do` : 'All done'}
+                  </span>
+                )}
+              </div>
+
+              {inSkill.length === 0 ? (
+                <p className="text-sm text-slate-400 bg-white border border-dashed border-slate-200 rounded-xl px-4 py-3">
+                  No {label.toLowerCase()} exercises assigned yet.
+                </p>
+              ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-            {lessons.map((lesson, index) => (
+            {inSkill.map(({ lesson, index }) => (
               <button
                 key={lesson.id}
                 onClick={() => onSelectLesson(lesson)}
@@ -124,6 +160,11 @@ export const StudentDashboard: React.FC<Props> = ({ studentName, onSelectLesson,
                 </div>
               </button>
             ))}
+          </div>
+              )}
+            </section>
+            );
+          })}
           </div>
         )}
       </main>

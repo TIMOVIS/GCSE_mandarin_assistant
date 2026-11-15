@@ -1,9 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { AssignedLesson, Exercise } from '../types';
-import { updateLesson } from '../services/storage';
+import { updateLesson, uploadAudio } from '../services/storage';
+import { playSpeech } from '../services/audio';
 import { generateImage, generateSpeech, getChatResponse, evaluateAnswer } from '../services/geminiService';
 import ReactMarkdown from 'react-markdown';
-import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, BookOpen, PenTool, ChevronRight, GraduationCap, Home, ChevronLeft, Volume2, Sparkles, MessageCircle, Send, X, Loader2, Check, ArrowRight, Languages, Eye } from 'lucide-react';
+import { ArrowLeft, CheckCircle2, XCircle, AlertCircle, BookOpen, PenTool, ChevronRight, GraduationCap, Home, ChevronLeft, Volume2, Sparkles, MessageCircle, Send, X, Loader2, Check, ArrowRight, Languages, Eye, Mic, Square } from 'lucide-react';
 
 interface Props {
   lesson: AssignedLesson;
@@ -152,6 +153,19 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
   const [exerciseFeedback, setExerciseFeedback] = useState<string[]>(
     lesson.exerciseFeedback || new Array(lesson.exercises.length).fill('')
   );
+
+  // Speaking exercises: one recording URL per exercise, marked by the tutor
+  const [userAudio, setUserAudio] = useState<string[]>(
+    lesson.userAudio || new Array(lesson.exercises.length).fill('')
+  );
+  const [isRecording, setIsRecording] = useState(false);
+  const [recording, setRecording] = useState<{ blob: Blob; url: string } | null>(null);
+  const [uploading, setUploading] = useState(false);
+  const [listenLoading, setListenLoading] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const isSpeaking = (ex: Exercise) => ex.type === 'speaking';
+  const autoMarked = lesson.exercises.filter(ex => !isSpeaking(ex)).length;
+  const awaitingTutor = autoMarked === 0 && !lesson.tutorAdjustedScores;
 
   // Practice Mode State
   const [practiceIndex, setPracticeIndex] = useState(0);
@@ -362,13 +376,75 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
     }
   };
 
+  const startRecording = async () => {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      const chunks: Blob[] = [];
+      recorder.ondataavailable = (event) => chunks.push(event.data);
+      recorder.onstop = () => {
+        const blob = new Blob(chunks, { type: recorder.mimeType || 'audio/webm' });
+        setRecording({ blob, url: URL.createObjectURL(blob) });
+        stream.getTracks().forEach(track => track.stop());
+      };
+      mediaRecorderRef.current = recorder;
+      setRecording(null);
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error("Error accessing microphone", err);
+      alert("Microphone access denied or not available.");
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+    setIsRecording(false);
+  };
+
+  const handleSubmitRecording = async () => {
+    if (!recording) return;
+    setUploading(true);
+    try {
+      const type = recording.blob.type;
+      const ext = type.includes('mp4') ? 'mp4' : type.includes('ogg') ? 'ogg' : 'webm';
+      const url = await uploadAudio(recording.blob, `lesson_${lesson.id}_q${practiceIndex + 1}_${Date.now()}.${ext}`);
+      const nextAudio = [...userAudio];
+      nextAudio[practiceIndex] = url;
+      setUserAudio(nextAudio);
+      const nextAnswers = [...answers];
+      nextAnswers[practiceIndex] = '(audio recording)';
+      setAnswers(nextAnswers);
+      setFeedbackStatus('correct');
+    } catch (err) {
+      alert("Your recording could not be saved. Check your connection and try again.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleListen = async (text: string) => {
+    if (listenLoading) return;
+    setListenLoading(true);
+    try {
+      await playSpeech(text);
+    } catch (err) {
+      console.error("Audio playback failed", err);
+      alert("The audio could not be played. Please try again.");
+    } finally {
+      setListenLoading(false);
+    }
+  };
+
   const handleContinue = async () => {
     setShowTranslation(false); // Reset translation view for next question
+    setRecording(null);
     // If it's the last exercise
     if (practiceIndex >= lesson.exercises.length - 1) {
-      // Calculate final average score (percentage)
-      const totalScore = exerciseScores.reduce((sum, score) => sum + score, 0);
-      const averageScore = exerciseScores.length > 0 ? Math.round(totalScore / exerciseScores.length) : 0;
+      // Calculate final average score (percentage). Speaking is marked by the tutor, so it is left out.
+      const marked = exerciseScores.filter((_, i) => !isSpeaking(lesson.exercises[i]));
+      const totalScore = marked.reduce((sum, score) => sum + score, 0);
+      const averageScore = marked.length > 0 ? Math.round(totalScore / marked.length) : 0;
       setScore(averageScore);
       setSubmitted(true);
       
@@ -378,6 +454,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
         completed: true,
         score: averageScore,
         userAnswers: answers,
+        userAudio: userAudio,
         exerciseScores: exerciseScores,
         exerciseFeedback: exerciseFeedback
       });
@@ -402,6 +479,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
       setCurrentFeedback('');
       setShowTranslation(false);
       setShowResultDetail(false);
+      setRecording(null);
     }
   };
 
@@ -520,7 +598,8 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
         </header>
 
         <main className="flex-1 p-6 flex flex-col items-center justify-center max-w-4xl mx-auto w-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full">
+          <div className={`grid grid-cols-1 gap-6 w-full ${lesson.material.trim() ? 'md:grid-cols-2' : 'max-w-md'}`}>
+            {lesson.material.trim() && (
             <button 
               onClick={() => setView('learn')}
               className="bg-white p-8 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-300 hover:shadow-lg transition-all group text-left flex flex-col h-64"
@@ -534,6 +613,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                 Start Learning <ChevronRight size={20} className="ml-1 group-hover:translate-x-1 transition-transform" />
               </div>
             </button>
+            )}
 
             <button 
               onClick={() => setView('practice')}
@@ -543,7 +623,12 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                 <div className="bg-brand-50 w-14 h-14 rounded-xl flex items-center justify-center group-hover:bg-brand-100 transition-colors">
                   <PenTool className="text-brand-600 w-8 h-8" />
                 </div>
-                {submitted && (
+                {submitted && awaitingTutor && (
+                   <span className="px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 bg-slate-100 text-slate-600">
+                     <CheckCircle2 size={14} /> Sent to tutor
+                   </span>
+                )}
+                {submitted && !awaitingTutor && (
                    <span className={`px-3 py-1 rounded-full text-sm font-bold flex items-center gap-1 ${
                      score >= 80 ? 'bg-green-100 text-green-700' : 
                      score >= 60 ? 'bg-yellow-100 text-yellow-700' : 
@@ -555,7 +640,9 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
               </div>
               <h3 className="text-2xl font-bold text-slate-800 mb-2">Practice Exercises</h3>
               <p className="text-slate-500 mb-auto">
-                {submitted 
+                {submitted && awaitingTutor
+                  ? 'Your recordings have been sent to your tutor.'
+                  : submitted 
                   ? `Completed ${lesson.exercises.length} questions with ${score}% average` 
                   : `Complete ${lesson.exercises.length} questions to test your knowledge.`}
               </p>
@@ -687,8 +774,9 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                 const exFeedback = exerciseFeedback[idx] || '';
                 const tutorComment = (lesson.tutorComments || [])[idx] || '';
                 const userAns = answers[idx] || '(No answer)';
-                const borderColor = exScore === 100 ? 'border-green-300' : exScore >= 50 ? 'border-yellow-300' : 'border-red-300';
-                const bgColor = exScore === 100 ? 'bg-green-50' : exScore >= 50 ? 'bg-yellow-50' : 'bg-red-50';
+                const unmarked = isSpeaking(ex) && !lesson.tutorAdjustedScores;
+                const borderColor = unmarked ? 'border-slate-200' : exScore === 100 ? 'border-green-300' : exScore >= 50 ? 'border-yellow-300' : 'border-red-300';
+                const bgColor = unmarked ? 'bg-white' : exScore === 100 ? 'bg-green-50' : exScore >= 50 ? 'bg-yellow-50' : 'bg-red-50';
                 const scoreColor = exScore === 100 ? 'text-green-600' : exScore >= 50 ? 'text-yellow-600' : 'text-red-600';
                 const iconColor = exScore === 100 ? 'text-green-500' : exScore >= 50 ? 'text-yellow-500' : 'text-red-500';
 
@@ -697,7 +785,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                     <div className="flex justify-between items-start mb-3">
                       <div className="flex items-start gap-3">
                         <div className={`mt-0.5 w-8 h-8 rounded-full flex items-center justify-center text-white text-sm font-bold ${
-                          exScore === 100 ? 'bg-green-500' : exScore >= 50 ? 'bg-yellow-500' : 'bg-red-500'
+                          unmarked ? 'bg-slate-400' : exScore === 100 ? 'bg-green-500' : exScore >= 50 ? 'bg-yellow-500' : 'bg-red-500'
                         }`}>
                           {idx + 1}
                         </div>
@@ -708,7 +796,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                           )}
                         </div>
                       </div>
-                      <div className="flex flex-col items-end gap-2">
+                      <div className={`flex-col items-end gap-2 ${isSpeaking(ex) && !lesson.tutorAdjustedScores ? 'hidden' : 'flex'}`}>
                         <span className={`font-bold text-xl ${scoreColor}`}>{exScore}%</span>
                         {exScore === 100 ? (
                           <CheckCircle2 className={iconColor} size={24} />
@@ -720,7 +808,9 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                     <div className="ml-11 space-y-3">
                       <div>
                         <span className="text-xs font-bold text-slate-400 uppercase">Your Answer:</span>
-                        <p className="text-slate-700 mt-1">{userAns}</p>
+                        {userAudio[idx]
+                          ? <audio controls preload="none" src={userAudio[idx]} className="mt-1 w-full max-w-md" />
+                          : <p className="text-slate-700 mt-1">{userAns}</p>}
                       </div>
                       {tutorComment && (
                         <div className="p-3 bg-blue-50 rounded-lg border border-blue-200">
@@ -730,7 +820,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                       )}
                       {ex.answer && (
                         <div>
-                          <span className="text-xs font-bold text-slate-400 uppercase">Correct Answer:</span>
+                          <span className="text-xs font-bold text-slate-400 uppercase">{isSpeaking(ex) ? 'Model Answer:' : 'Correct Answer:'}</span>
                           <p className="text-green-700 mt-1 font-semibold">{ex.answer}</p>
                         </div>
                       )}
@@ -770,11 +860,15 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                 )}
               </div>
               <h3 className="text-2xl font-bold text-slate-800 mb-2">
-                {score === 100 ? 'Perfect Score!' : score >= 80 ? 'Excellent Work!' : score >= 60 ? 'Well Done!' : 'Keep Practicing!'}
+                {awaitingTutor ? 'Recordings Sent!' : score === 100 ? 'Perfect Score!' : score >= 80 ? 'Excellent Work!' : score >= 60 ? 'Well Done!' : 'Keep Practicing!'}
               </h3>
+              {awaitingTutor ? (
+              <p className="text-slate-600 mb-6">Your tutor will listen and give you feedback.</p>
+              ) : (
               <p className="text-slate-600 mb-6">
                 Your average score: <span className={`font-bold text-lg ${score >= 80 ? 'text-green-600' : score >= 60 ? 'text-yellow-600' : 'text-red-600'}`}>{score}%</span>
               </p>
+              )}
               {exerciseScores && exerciseScores.length > 0 && (
                 <div className="mb-6 p-4 bg-slate-50 rounded-xl border border-slate-200">
                   <p className="text-sm font-bold text-slate-500 uppercase mb-2">Exercise Breakdown</p>
@@ -782,9 +876,13 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                     {exerciseScores.map((exScore, idx) => (
                       <div key={idx} className="flex items-center justify-between">
                         <span className="text-sm text-slate-600">Question {idx + 1}:</span>
+                        {isSpeaking(lesson.exercises[idx]) && !lesson.tutorAdjustedScores ? (
+                        <span className="font-medium text-slate-500">Recorded</span>
+                        ) : (
                         <span className={`font-bold ${exScore >= 80 ? 'text-green-600' : exScore >= 50 ? 'text-yellow-600' : 'text-red-600'}`}>
                           {exScore}%
                         </span>
+                        )}
                       </div>
                     ))}
                   </div>
@@ -845,7 +943,7 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
             <div className="bg-white rounded-2xl shadow-sm border border-slate-200 p-8 mb-6">
               <div className="flex justify-between items-start mb-4">
                 <span className="bg-brand-50 text-brand-700 text-xs font-bold px-3 py-1 rounded uppercase tracking-wider">
-                  {currentEx.type}
+                  {currentEx.type.replace(/_/g, ' ')}
                 </span>
                 {exerciseImages[practiceIndex] && (
                   <img 
@@ -856,14 +954,62 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
                 )}
               </div>
 
-              <h3 className="text-xl font-bold text-slate-800 mb-2 chinese-text">{currentEx.question}</h3>
+              {currentEx.audioText && (
+                <button
+                  onClick={() => handleListen(currentEx.audioText!)}
+                  disabled={listenLoading}
+                  className="flex items-center gap-2 mb-4 px-5 py-3 rounded-xl bg-purple-600 hover:bg-purple-700 text-white font-semibold transition-colors disabled:opacity-60 touch-manipulation"
+                >
+                  {listenLoading ? <Loader2 size={20} className="animate-spin" /> : <Volume2 size={20} />}
+                  {listenLoading ? 'Loading audio…' : 'Play audio'}
+                </button>
+              )}
+              {currentEx.passage && (
+                <p className="mb-4 p-4 rounded-xl bg-slate-50 border border-slate-200 text-lg leading-relaxed text-slate-800 chinese-text whitespace-pre-line">{currentEx.passage}</p>
+              )}
+
+              <h3 className="text-xl font-bold text-slate-800 mb-2 chinese-text whitespace-pre-line">{currentEx.question}</h3>
               {currentEx.questionTranslation && (
                 <p className="text-slate-500 mb-6 flex items-center gap-2">
                   <Languages size={16} /> {currentEx.questionTranslation}
                 </p>
               )}
 
-              {currentEx.type === 'quiz' && currentEx.options ? (
+              {isSpeaking(currentEx) ? (
+                <div className="space-y-4">
+                  {feedbackStatus === 'idle' && (
+                    <button
+                      onClick={isRecording ? stopRecording : startRecording}
+                      disabled={uploading}
+                      className={`flex items-center gap-2 px-5 py-3 rounded-xl font-semibold text-white transition-colors disabled:opacity-60 touch-manipulation ${
+                        isRecording ? 'bg-slate-800 hover:bg-black' : 'bg-orange-600 hover:bg-orange-700'
+                      }`}
+                    >
+                      {isRecording ? <Square size={18} /> : <Mic size={20} />}
+                      {isRecording ? 'Stop recording' : recording ? 'Record again' : 'Start recording'}
+                    </button>
+                  )}
+                  {isRecording && <p className="text-sm text-orange-700 font-medium">Recording… speak now.</p>}
+                  {recording && !isRecording && feedbackStatus === 'idle' && (
+                    <div>
+                      <p className="text-sm text-slate-500 mb-1">Listen back, then submit or record again.</p>
+                      <audio controls src={recording.url} className="w-full max-w-md" />
+                    </div>
+                  )}
+                  {feedbackStatus !== 'idle' && (
+                    <div className="p-4 rounded-xl border-2 bg-green-50 border-green-300">
+                      <p className="font-bold text-green-800 flex items-center gap-2"><CheckCircle2 size={20} /> Recording saved</p>
+                      <p className="text-sm text-green-800 mt-1">Your tutor will listen and mark it.</p>
+                      {currentEx.answer && (
+                        <div className="mt-2 pt-2 border-t border-green-200">
+                          <p className="text-xs font-bold text-slate-400 uppercase mb-1">Model Answer:</p>
+                          <p className="text-slate-700 font-medium chinese-text whitespace-pre-line">{currentEx.answer}</p>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ) : currentEx.options && currentEx.options.length > 0 ? (
                 <div className="space-y-3">
                   {currentEx.options.map((opt, idx) => (
                     <button
@@ -954,7 +1100,16 @@ export const StudentLessonView: React.FC<Props> = ({ lesson, onBack }) => {
               >
                 Back
               </button>
-              {feedbackStatus === 'idle' ? (
+              {feedbackStatus === 'idle' && isSpeaking(currentEx) ? (
+                <button
+                  onClick={handleSubmitRecording}
+                  disabled={!recording || isRecording || uploading}
+                  className="px-8 py-3 rounded-xl font-semibold bg-brand-600 hover:bg-brand-700 text-white transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                >
+                  {uploading && <Loader2 size={18} className="animate-spin" />}
+                  {uploading ? 'Saving…' : 'Submit recording'}
+                </button>
+              ) : feedbackStatus === 'idle' ? (
                 <button
                   onClick={handleCheckAnswer}
                   disabled={!answers[practiceIndex] || answers[practiceIndex].trim() === '' || evaluating}

@@ -1,7 +1,10 @@
-import React from 'react';
-import { PenTool, BarChart3, ArrowLeft, GraduationCap, Settings, BookOpen } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { PenTool, BarChart3, ArrowLeft, Settings, BookOpen, ChevronRight, Loader2, Search, Users } from 'lucide-react';
+import { AssignedLesson, Student } from '../types';
+import { getLessons, getStudents, lessonBelongsTo } from '../services/storage';
 
 interface Props {
+  onSelectStudent: (student: Student) => void;
   onPlanLesson: () => void;
   onViewProgress: () => void;
   onBack: () => void;
@@ -10,89 +13,120 @@ interface Props {
 }
 
 export const TutorDashboard: React.FC<Props> = ({
+  onSelectStudent,
   onPlanLesson,
   onViewProgress,
   onBack,
   onSettings,
   onManageVocab
 }) => {
-  return (
-    <div className="w-full max-w-4xl mx-auto relative p-4 sm:p-6 pb-12">
-      <button
-        onClick={onSettings}
-        className="absolute top-4 right-4 sm:top-6 sm:right-6 p-3 rounded-full bg-white shadow-sm border border-slate-200 text-slate-500 hover:text-slate-800 hover:shadow-md transition-all z-10 touch-manipulation"
-        title="Settings & API Key"
-      >
-        <Settings size={24} />
-      </button>
+  const [students, setStudents] = useState<Student[]>([]);
+  const [lessons, setLessons] = useState<AssignedLesson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
 
+  useEffect(() => {
+    let mounted = true;
+    Promise.all([getStudents(), getLessons()]).then(([s, l]) => {
+      if (!mounted) return;
+      setStudents(s);
+      setLessons(l);
+      setLoading(false);
+    });
+    return () => { mounted = false; };
+  }, []);
+
+  const rows = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return students
+      .filter(s => !q || s.name.toLowerCase().includes(q))
+      .map(student => {
+        const own = lessons.filter(l => lessonBelongsTo(l, student));
+        return { student, assigned: own.length, submitted: own.filter(l => l.completed).length };
+      });
+  }, [students, lessons, search]);
+
+  const tools = [
+    { label: 'Plan lessons', icon: PenTool, onClick: onPlanLesson },
+    { label: 'Vocabulary lists', icon: BookOpen, onClick: onManageVocab },
+    { label: 'Progress reports', icon: BarChart3, onClick: onViewProgress },
+    { label: 'Settings', icon: Settings, onClick: onSettings },
+  ];
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-4 sm:p-6 pb-12">
       <button
         onClick={onBack}
-        className="mb-6 sm:mb-8 flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors touch-manipulation py-2"
+        className="mb-6 flex items-center gap-2 text-slate-500 hover:text-slate-700 transition-colors touch-manipulation py-2"
       >
-        <ArrowLeft size={20} /> <span className="text-base sm:text-lg">Back to Login</span>
+        <ArrowLeft size={20} /> <span className="text-base">Back to Login</span>
       </button>
 
-      <div className="text-center mb-8 sm:mb-12">
-        <div className="bg-brand-100 p-3 sm:p-4 rounded-full inline-block mb-4">
-          <GraduationCap className="w-10 h-10 sm:w-12 sm:h-12 text-brand-600" />
+      <div className="flex flex-wrap items-end justify-between gap-4 mb-6">
+        <div>
+          <h1 className="text-2xl sm:text-3xl font-bold text-slate-900">My Students</h1>
+          <p className="text-sm sm:text-base text-slate-500 mt-1">Choose a student to see their profile, word bank, exercises and history.</p>
         </div>
-        <h1 className="text-2xl sm:text-3xl font-bold text-slate-900 mb-2">Tutor Dashboard</h1>
-        <p className="text-sm sm:text-base text-slate-500">Manage your curriculum and track student success.</p>
+        <div className="flex flex-wrap gap-2">
+          {tools.map(({ label, icon: Icon, onClick }) => (
+            <button
+              key={label}
+              onClick={onClick}
+              className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white border border-slate-200 text-sm font-medium text-slate-600 hover:border-brand-300 hover:text-brand-700 transition-colors touch-manipulation"
+            >
+              <Icon size={16} /> {label}
+            </button>
+          ))}
+        </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
-        {/* Plan Lesson Card */}
-        <button
-          onClick={onPlanLesson}
-          className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200 hover:border-brand-300 hover:shadow-xl transition-all group text-left flex flex-col min-h-[240px] sm:h-64 touch-manipulation active:scale-[0.98]"
-        >
-          <div className="bg-brand-50 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center mb-4 sm:mb-6 group-hover:bg-brand-100 transition-colors">
-            <PenTool className="text-brand-600 w-7 h-7 sm:w-8 sm:h-8" />
-          </div>
-          <h3 className="text-xl sm:text-2xl font-bold text-slate-800 mb-2">Plan Lessons</h3>
-          <p className="text-sm sm:text-base text-slate-500 mb-auto">
-            Create new learning modules and generate custom exercises for your students.
-          </p>
-          <div className="mt-4 sm:mt-6 flex items-center text-brand-600 font-semibold text-sm sm:text-base group-hover:translate-x-1 transition-transform">
-            Start Planning →
-          </div>
-        </button>
-
-        {/* Vocabulary Management Card */}
-        <button
-          onClick={onManageVocab}
-          className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200 hover:border-green-300 hover:shadow-xl transition-all group text-left flex flex-col min-h-[240px] sm:h-64 touch-manipulation active:scale-[0.98]"
-        >
-          <div className="bg-green-50 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center mb-4 sm:mb-6 group-hover:bg-green-100 transition-colors">
-            <BookOpen className="text-green-600 w-7 h-7 sm:w-8 sm:h-8" />
-          </div>
-          <h3 className="text-xl sm:text-2xl font-bold text-slate-800 mb-2">Vocabulary Lists</h3>
-          <p className="text-sm sm:text-base text-slate-500 mb-auto">
-            Upload and manage vocabulary lists for student practice.
-          </p>
-          <div className="mt-4 sm:mt-6 flex items-center text-green-600 font-semibold text-sm sm:text-base group-hover:translate-x-1 transition-transform">
-            Manage Lists →
-          </div>
-        </button>
-
-        {/* Progress Card */}
-        <button
-          onClick={onViewProgress}
-          className="bg-white p-6 sm:p-8 rounded-2xl shadow-sm border border-slate-200 hover:border-blue-300 hover:shadow-xl transition-all group text-left flex flex-col min-h-[240px] sm:h-64 touch-manipulation active:scale-[0.98]"
-        >
-          <div className="bg-blue-50 w-12 h-12 sm:w-14 sm:h-14 rounded-xl flex items-center justify-center mb-4 sm:mb-6 group-hover:bg-blue-100 transition-colors">
-            <BarChart3 className="text-blue-600 w-7 h-7 sm:w-8 sm:h-8" />
-          </div>
-          <h3 className="text-xl sm:text-2xl font-bold text-slate-800 mb-2">Student Progress</h3>
-          <p className="text-sm sm:text-base text-slate-500 mb-auto">
-            View performance analytics, completed exercises, and lesson history.
-          </p>
-          <div className="mt-4 sm:mt-6 flex items-center text-blue-600 font-semibold text-sm sm:text-base group-hover:translate-x-1 transition-transform">
-            View Reports →
-          </div>
-        </button>
+      <div className="relative mb-4">
+        <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+        <input
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          placeholder="Search students"
+          className="w-full pl-10 pr-4 py-3 rounded-xl border border-slate-200 bg-white focus:ring-2 focus:ring-brand-500 focus:border-brand-500 outline-none"
+        />
       </div>
+
+      {loading ? (
+        <div className="flex justify-center items-center h-48">
+          <Loader2 size={36} className="text-brand-500 animate-spin" />
+        </div>
+      ) : rows.length === 0 ? (
+        <div className="text-center py-16 bg-white rounded-2xl border border-dashed border-slate-300">
+          <Users className="w-10 h-10 text-slate-300 mx-auto mb-3" />
+          <p className="font-semibold text-slate-700">{students.length === 0 ? 'No students yet' : 'No students match your search'}</p>
+          {students.length === 0 && (
+            <p className="text-sm text-slate-500 mt-1">Students appear here once they are in the students table or have a lesson assigned.</p>
+          )}
+        </div>
+      ) : (
+        <div className="bg-white rounded-2xl border border-slate-200 divide-y divide-slate-100 overflow-hidden">
+          {rows.map(({ student, assigned, submitted }) => (
+            <button
+              key={student.id}
+              onClick={() => onSelectStudent(student)}
+              className="w-full flex items-center gap-4 px-4 sm:px-5 py-4 text-left hover:bg-slate-50 transition-colors touch-manipulation group"
+            >
+              <div className="w-10 h-10 rounded-full bg-brand-50 text-brand-700 font-bold flex items-center justify-center flex-shrink-0">
+                {student.name.trim().charAt(0).toUpperCase()}
+              </div>
+              <div className="min-w-0 flex-1">
+                <p className="font-semibold text-slate-800 truncate">{student.name}</p>
+                <p className="text-xs text-slate-500">
+                  {[student.schoolYear, student.age ? `Age ${student.age}` : ''].filter(Boolean).join(' · ') || 'Profile not filled in'}
+                </p>
+              </div>
+              <p className="text-xs text-slate-500 text-right flex-shrink-0">
+                {assigned} assigned<br />{submitted} submitted
+              </p>
+              <ChevronRight size={18} className="text-slate-300 group-hover:text-brand-500 flex-shrink-0" />
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 };

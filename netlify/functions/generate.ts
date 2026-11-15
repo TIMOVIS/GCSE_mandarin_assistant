@@ -2,6 +2,8 @@ import { Handler } from '@netlify/functions';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import OpenAI from "openai";
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { EXERCISE_FORMATS } from '../../data/exerciseFormats';
+import { TAG_GROUPS, ALL_TAGS } from '../../data/wordTags';
 
 // Helper for exponential backoff retry
 const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
@@ -408,6 +410,113 @@ Return JSON array with exercises. Each exercise: { "type": "quiz"|"translation",
           statusCode: 200,
           headers: corsHeaders,
           body: JSON.stringify({ result: exercises }),
+        };
+      }
+
+      case 'generateSkillExercises': {
+        const { skill, formatIds, words, stage, count, focus } = params;
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
+
+        const formats = EXERCISE_FORMATS.filter(f => f.skill === skill && (formatIds || []).includes(f.id));
+        if (formats.length === 0) {
+          return {
+            statusCode: 400,
+            headers: corsHeaders,
+            body: JSON.stringify({ error: 'No exercise formats selected' }),
+          };
+        }
+        const wordList = (Array.isArray(words) ? words : [])
+          .map((w: any) => `${w.word}${w.pinyin ? ` (${w.pinyin})` : ''}${w.meaning ? ` - ${w.meaning}` : ''}`)
+          .join('\n');
+
+        const prompt = `Generate exactly ${count} ${skill} exercises for a student preparing for GCSE/IGCSE Mandarin Chinese.
+Student level: ${stage}. Keep vocabulary and grammar within reach of this level. Use simplified characters.
+${focus ? `Focus of this set: ${focus}\n` : ''}${wordList ? `Build the exercises around these words and phrases from the student's word bank, using each at least once where possible:\n${wordList}\n` : ''}
+Spread the exercises evenly across these formats. Each exercise is a JSON object with a "format" field set to the format id, and the fields described:
+${formats.map(f => `- "${f.id}": ${f.spec}`).join('\n')}
+
+Return a JSON array only. Every object has: "format", "question", "answer", "options" (array, empty when not used), and where the format asks for them "questionTranslation", "audioText", "passage".`;
+
+        const result = await callWithRetry(async () => {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              maxOutputTokens: 8192,
+            }
+          });
+          return response.text;
+        });
+
+        const parsed: any = safeJsonParse(result || "", []);
+        const raw: any[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.exercises) ? parsed.exercises : []);
+        // The answer type comes from the format, not from the model
+        const exercises = raw
+          .map((e: any) => {
+            const format = formats.find(f => f.id === e.format);
+            if (!format || !e.question) return null;
+            return {
+              type: format.type,
+              format: format.id,
+              question: String(e.question),
+              questionTranslation: e.questionTranslation ? String(e.questionTranslation) : undefined,
+              answer: e.answer ? String(e.answer) : '',
+              options: Array.isArray(e.options) ? e.options.map(String) : [],
+              audioText: e.audioText ? String(e.audioText) : undefined,
+              passage: e.passage ? String(e.passage) : undefined,
+            };
+          })
+          .filter(Boolean);
+
+        return {
+          statusCode: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({ result: exercises }),
+        };
+      }
+
+      case 'annotateWords': {
+        const { words } = params;
+        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
+
+        const prompt = `These Mandarin Chinese words and phrases are going into a GCSE/IGCSE word bank.
+For each one give the pinyin with tone marks, a short English meaning, and tags.
+Keep any pinyin or meaning that is already given.
+
+Tags must be copied exactly from these lists. Pick the one best tag from each of Topic, Word type and Level, and add tags from the other groups only when they clearly apply:
+${TAG_GROUPS.map(g => `- ${g.label}: ${g.tags.join('; ')}`).join('\n')}
+Level is the stage at which a learner normally meets the word: Stage 1 is absolute beginner, Stage 6 is top GCSE grade.
+
+Words:
+${JSON.stringify(words)}
+
+Return a JSON array only, in the same order, of objects: { "word": "...", "pinyin": "...", "meaning": "...", "tags": ["..."] }`;
+
+        const result = await callWithRetry(async () => {
+          const response = await ai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: prompt,
+            config: {
+              responseMimeType: 'application/json',
+              maxOutputTokens: 8192,
+            }
+          });
+          return response.text;
+        });
+
+        const parsed: any = safeJsonParse(result || "", []);
+        const annotated = (Array.isArray(parsed) ? parsed : []).map((w: any) => ({
+          word: String(w.word || ''),
+          pinyin: String(w.pinyin || ''),
+          meaning: String(w.meaning || ''),
+          tags: Array.isArray(w.tags) ? w.tags.filter((t: any) => ALL_TAGS.includes(t)) : [],
+        }));
+
+        return {
+          statusCode: 200,
+          headers: corsHeaders,
+          body: JSON.stringify({ result: annotated }),
         };
       }
 

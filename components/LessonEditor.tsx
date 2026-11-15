@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { Stage, Topic, LearningPoint, Exercise, AssignedLesson } from '../types';
+import { Stage, Topic, LearningPoint, Exercise, AssignedLesson, Skill } from '../types';
+import { SKILLS, inferSkill } from '../services/skills';
 import { generateLearningMaterial, generateExercises } from '../services/geminiService';
 import { saveLesson } from '../services/storage';
 import ReactMarkdown from 'react-markdown';
@@ -28,7 +29,11 @@ export const LessonEditor: React.FC<Props> = ({ stage, topic, point, studentName
   const [exercisesLoading, setExercisesLoading] = useState(false);
   const [exercises, setExercises] = useState<Exercise[]>([]);
   const [editExercisesMode, setEditExercisesMode] = useState(false);
-  
+
+  // Skill category the student sees this lesson under; suggested until the tutor picks one
+  const [skillChoice, setSkillChoice] = useState<Skill | null>(null);
+  const skill = skillChoice ?? inferSkill(topic.title, point.description, exercises);
+
   // Saving State
   const [saving, setSaving] = useState(false);
 
@@ -128,6 +133,7 @@ export const LessonEditor: React.FC<Props> = ({ stage, topic, point, studentName
     const newLesson: AssignedLesson = {
       id: crypto.randomUUID(),
       studentName: studentName,
+      skill: skill,
       stageTitle: stage.title,
       topicTitle: topic.title,
       pointDescription: point.description,
@@ -461,8 +467,20 @@ export const LessonEditor: React.FC<Props> = ({ stage, topic, point, studentName
 
                             {/* Assign Bar */}
                             {exercises.length > 0 && (
-                                <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 flex justify-center z-10">
-                                    <button 
+                                <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 flex flex-wrap items-center justify-center gap-3 z-10">
+                                    <label className="flex items-center gap-2 text-sm font-medium text-slate-600">
+                                        Category
+                                        <select
+                                            value={skill}
+                                            onChange={(e) => setSkillChoice(e.target.value as Skill)}
+                                            className="px-3 py-2.5 text-sm border border-slate-200 rounded-lg bg-white text-slate-800 focus:ring-2 focus:ring-brand-500 outline-none"
+                                        >
+                                            {SKILLS.map(s => (
+                                                <option key={s.id} value={s.id}>{s.label}</option>
+                                            ))}
+                                        </select>
+                                    </label>
+                                    <button
                                         onClick={handleAssignToStudent}
                                         disabled={saving}
                                         className="bg-brand-600 hover:bg-brand-700 text-white font-bold py-3 px-8 rounded-xl flex items-center gap-2 shadow-lg shadow-brand-200 transform active:scale-[0.98] transition-all disabled:opacity-50"

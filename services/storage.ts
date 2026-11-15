@@ -1,6 +1,6 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
-import { AssignedLesson, VocabProgress, VocabList } from '../types';
+import { AssignedLesson, VocabProgress, VocabList, Student, WordBankEntry } from '../types';
 
 const LOCAL_STORAGE_KEY = 'mandarin_master_lessons';
 const LOCAL_STORAGE_VOCAB_KEY = 'mandarin_master_vocab';
@@ -9,6 +9,9 @@ const LOCAL_STORAGE_VOCAB_LISTS_KEY = 'mandarin_master_vocab_lists';
 // Default credentials provided by user
 const DEFAULT_SUPABASE_URL = 'https://ujyjsmlasctasluxpuyn.supabase.co';
 const DEFAULT_SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InVqeWpzbWxhc2N0YXNsdXhwdXluIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDU0ODM3MDAsImV4cCI6MjA2MTA1OTcwMH0.0GXUKWhJ8Ck9zSkslKvrKOhFnsi-5jO0TT4qLAH5yf4';
+
+const AUDIO_BUCKET = 'ct_tutor';
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 let supabaseInstance: SupabaseClient | null = null;
 
@@ -44,7 +47,7 @@ const safeLocalParse = <T>(key: string, fallback: T): T => {
 };
 
 // --- SAVE LESSON ---
-export const saveLesson = async (lesson: AssignedLesson): Promise<void> => {
+export const saveLesson = async (lesson: AssignedLesson, tutorId?: string): Promise<void> => {
   const supabase = getSupabase();
 
   if (supabase) {
@@ -52,7 +55,9 @@ export const saveLesson = async (lesson: AssignedLesson): Promise<void> => {
     const { error } = await supabase.from('lessons').insert({
       id: lesson.id,
       student_name: lesson.studentName,
-      data: lesson
+      data: lesson,
+      ...(lesson.studentId && UUID_PATTERN.test(lesson.studentId) ? { student_id: lesson.studentId } : {}),
+      ...(tutorId ? { tutor_id: tutorId } : {})
     });
     if (error) {
       console.error("Supabase Save Error:", error);
@@ -71,17 +76,26 @@ export const getLessons = async (): Promise<AssignedLesson[]> => {
   const supabase = getSupabase();
 
   if (supabase) {
-    // Cloud Fetch
-    const { data, error } = await supabase
+    // Cloud Fetch. audio_url holds a lesson-level recording; not every database has the column.
+    let { data, error }: { data: any[] | null; error: any } = await supabase
       .from('lessons')
-      .select('data')
+      .select('data, audio_url')
       .order('created_at', { ascending: false });
-    
     if (error) {
+      ({ data, error } = await supabase
+        .from('lessons')
+        .select('data')
+        .order('created_at', { ascending: false }));
+    }
+    
+    if (error || !data) {
       console.error("Supabase Fetch Error:", error);
       return [];
     }
-    return data.map((row: any) => row.data as AssignedLesson);
+    return data.map((row: any) => {
+      const lesson = row.data as AssignedLesson;
+      return row.audio_url && !lesson.audioUrl ? { ...lesson, audioUrl: row.audio_url } : lesson;
+    });
   } else {
     // Local Fetch
     return safeLocalParse<AssignedLesson[]>(LOCAL_STORAGE_KEY, []);
@@ -305,4 +319,140 @@ export const deleteVocabList = async (id: string): Promise<void> => {
   if (supabase) {
     await supabase.from('vocab_lists').delete().eq('id', id);
   }
+};
+
+
+// --- STUDENTS ---
+
+const sameName = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase();
+
+export const getStudents = async (): Promise<Student[]> => {
+  const supabase = getSupabase();
+
+  if (supabase) {
+    const { data, error } = await supabase.from('students').select('*').order('name');
+    if (error) {
+      console.error("Supabase Students Fetch Error:", error);
+    } else if (data && data.length > 0) {
+      return data.map((row: any): Student => ({
+        id: row.id,
+        name: row.name,
+        tutorId: row.tutor_id || undefined,
+        age: row.age_years ?? null,
+        schoolYear: row.school_year || '',
+        levels: row.levels || {}
+      }));
+    }
+  }
+
+  // No students table to read: fall back to the names that have lessons
+  const lessons = await getLessons();
+  const names: string[] = [];
+  lessons.forEach(l => {
+    if (l.studentName && !names.some(n => sameName(n, l.studentName))) names.push(l.studentName.trim());
+  });
+  return names.sort((a, b) => a.localeCompare(b)).map(name => ({ id: name, name, levels: {} }));
+};
+
+export const updateStudentProfile = async (student: Student): Promise<void> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+
+  const { data, error } = await supabase
+    .from('students')
+    .update({
+      age_years: student.age ?? null,
+      school_year: student.schoolYear || null,
+      levels: student.levels
+    })
+    .eq('id', student.id)
+    .select('id');
+
+  if (error) {
+    console.error("Supabase Student Update Error:", error);
+    // PGRST204: column not found, i.e. supabase/setup.sql has not been run yet
+    throw new Error(error.code === 'PGRST204' ? 'SETUP_NEEDED' : error.message);
+  }
+  if (!data || data.length === 0) throw new Error("The database did not accept the change");
+};
+
+export const lessonBelongsTo = (lesson: AssignedLesson, student: Student): boolean =>
+  lesson.studentId ? lesson.studentId === student.id : sameName(lesson.studentName || '', student.name);
+
+// --- WORD BANK ---
+
+const rowToWord = (row: any): WordBankEntry => ({
+  id: row.id,
+  tutorId: row.tutor_id || undefined,
+  word: row.word,
+  pinyin: row.pinyin || '',
+  meaning: row.meaning || '',
+  tags: Array.isArray(row.tags) ? row.tags : [],
+  createdAt: row.created_at
+});
+
+const wordBankError = (error: any): Error => {
+  console.error("Supabase Word Bank Error:", error);
+  // Table not found, i.e. supabase/setup.sql has not been run yet
+  const missing = error.code === 'PGRST205' || error.code === '42P01';
+  return new Error(missing ? 'SETUP_NEEDED' : error.message);
+};
+
+export const getWordBank = async (): Promise<WordBankEntry[]> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase.from('word_bank').select('*').order('created_at', { ascending: false });
+  if (error) throw wordBankError(error);
+  return (data || []).map(rowToWord);
+};
+
+export const addWordBankEntries = async (
+  entries: Omit<WordBankEntry, 'id' | 'createdAt'>[]
+): Promise<WordBankEntry[]> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { data, error } = await supabase
+    .from('word_bank')
+    .insert(entries.map(e => ({
+      word: e.word,
+      pinyin: e.pinyin,
+      meaning: e.meaning,
+      tags: e.tags,
+      ...(e.tutorId ? { tutor_id: e.tutorId } : {})
+    })))
+    .select('*');
+  if (error) throw wordBankError(error);
+  return (data || []).map(rowToWord);
+};
+
+export const updateWordBankEntry = async (entry: WordBankEntry): Promise<void> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { error } = await supabase
+    .from('word_bank')
+    .update({ word: entry.word, pinyin: entry.pinyin, meaning: entry.meaning, tags: entry.tags })
+    .eq('id', entry.id);
+  if (error) throw wordBankError(error);
+};
+
+export const deleteWordBankEntry = async (id: string): Promise<void> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const { error } = await supabase.from('word_bank').delete().eq('id', id);
+  if (error) throw wordBankError(error);
+};
+
+// --- AUDIO ---
+
+// Uploads a student's recording and returns its public URL
+export const uploadAudio = async (blob: Blob, fileName: string): Promise<string> => {
+  const supabase = getSupabase();
+  if (!supabase) throw new Error("Supabase is not configured");
+  const path = `audio/${fileName}`;
+  const { error } = await supabase.storage.from(AUDIO_BUCKET).upload(path, blob, { contentType: blob.type });
+  if (error) {
+    console.error("Supabase Audio Upload Error:", error);
+    throw new Error(error.message);
+  }
+  return supabase.storage.from(AUDIO_BUCKET).getPublicUrl(path).data.publicUrl;
 };
