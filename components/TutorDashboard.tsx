@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react';
-import { PenTool, BarChart3, ArrowLeft, Settings, BookOpen, ChevronRight, Loader2, Search, Users } from 'lucide-react';
+import { ArrowLeft, Settings, ChevronRight, Loader2, Search, Users } from 'lucide-react';
 import { AssignedLesson, Student } from '../types';
 import { getLessons, getStudents, lessonBelongsTo } from '../services/storage';
 
@@ -47,9 +47,6 @@ export const TutorDashboard: React.FC<Props> = ({
   }, [students, lessons, search]);
 
   const tools = [
-    { label: 'Plan lessons', icon: PenTool, onClick: onPlanLesson },
-    { label: 'Vocabulary lists', icon: BookOpen, onClick: onManageVocab },
-    { label: 'Progress reports', icon: BarChart3, onClick: onViewProgress },
     { label: 'Settings', icon: Settings, onClick: onSettings },
   ];
 
