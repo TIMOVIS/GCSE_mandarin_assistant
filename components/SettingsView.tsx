@@ -10,7 +10,7 @@ export const SettingsView: React.FC<Props> = ({ onBack }) => {
   const [supabaseUrl, setSupabaseUrl] = useState('');
   const [supabaseKey, setSupabaseKey] = useState('');
   const [saved, setSaved] = useState(false);
-  const [apiKeyStatus, setApiKeyStatus] = useState<{ geminiConfigured: boolean; openaiConfigured: boolean } | null>(null);
+  const [apiKeyStatus, setApiKeyStatus] = useState<{ geminiConfigured: boolean; openaiConfigured: boolean; anthropicConfigured?: boolean } | null>(null);
   const [loadingKeys, setLoadingKeys] = useState(true);
 
   useEffect(() => {
@@ -106,6 +106,16 @@ export const SettingsView: React.FC<Props> = ({ onBack }) => {
                     ) : (
                       <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded">
                         <span>OpenAI API Key: Optional (not configured - set OPENAI_API_KEY in Netlify if needed)</span>
+                      </div>
+                    )}
+                    {apiKeyStatus?.anthropicConfigured ? (
+                      <div className="flex items-center gap-2 text-xs text-green-700 bg-green-50 px-3 py-2 rounded">
+                        <CheckCircle2 size={14} />
+                        <span>Claude API Key: Configured (backup for text generation)</span>
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-slate-500 bg-slate-50 px-3 py-2 rounded">
+                        <span>Claude API Key: Optional (not configured - set ANTHROPIC_API_KEY in Netlify to use Claude as a backup)</span>
                       </div>
                     )}
                   </>

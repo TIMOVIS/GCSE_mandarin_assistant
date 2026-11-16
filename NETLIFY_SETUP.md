@@ -25,6 +25,12 @@ This app uses server-side Netlify functions to handle all AI API calls. API keys
    - Scope: All scopes (or specific if needed)
    - Note: Only needed for better single character pronunciation
 
+   **ANTHROPIC_API_KEY** (Optional)
+   - Key: `ANTHROPIC_API_KEY` (NO VITE_ prefix - this is server-side only)
+   - Value: Your Anthropic API key (starts with `sk-ant-...`)
+   - Scope: All scopes (or specific if needed)
+   - Note: Backup for text generation. Claude is used when Gemini fails or is not configured. Images and speech still need Gemini.
+
    **SUPABASE_URL** (Optional but Recommended)
    - Key: `SUPABASE_URL`
    - Value: Your Supabase project URL (e.g., `https://xxxxx.supabase.co`)

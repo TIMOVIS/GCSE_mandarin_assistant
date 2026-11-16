@@ -1,6 +1,7 @@
 import { Handler } from '@netlify/functions';
 import { GoogleGenAI, Type, Modality } from "@google/genai";
 import OpenAI from "openai";
+import Anthropic from "@anthropic-ai/sdk";
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { EXERCISE_FORMATS } from '../../data/exerciseFormats';
 import { TAG_GROUPS, ALL_TAGS } from '../../data/wordTags';
@@ -24,6 +25,40 @@ async function callWithRetry<T>(fn: () => Promise<T>, retries = 3, delay = 2000)
     }
     throw error;
   }
+}
+
+// Claude is the backup for text generation when Gemini fails or is not configured
+const CLAUDE_MODEL = 'claude-opus-5-5';
+
+async function askClaude(
+  apiKey: string,
+  opts: { prompt: string; system?: string; history?: Anthropic.Beta.BetaMessageParam[]; json?: boolean }
+): Promise<string> {
+  // One retry and a short timeout so the function answers before Netlify cuts it off
+  const client = new Anthropic({ apiKey, maxRetries: 1, timeout: 45_000 });
+  const prompt = opts.json
+    ? `${opts.prompt}\n\nReply with the JSON only: no explanation and no markdown code fences.`
+    : opts.prompt;
+
+  const response = await client.beta.messages.create({
+    model: CLAUDE_MODEL,
+    max_tokens: 16000,
+    // Low effort keeps the reply fast enough for a web request
+    output_config: { effort: 'low' },
+    // If Claude Opus declines a request, Anthropic re-runs it on another Claude model
+    betas: ['server-side-fallback-2026-07-01'],
+    fallbacks: 'default',
+    ...(opts.system ? { system: opts.system } : {}),
+    messages: [...(opts.history || []), { role: 'user', content: prompt }],
+  });
+
+  if (response.stop_reason === 'refusal') {
+    throw new Error('Claude declined this request');
+  }
+  return response.content
+    .filter((block): block is Anthropic.Beta.BetaTextBlock => block.type === 'text')
+    .map(block => block.text)
+    .join('');
 }
 
 // Helper to clean JSON string from LLM response
@@ -294,19 +329,71 @@ export const handler: Handler = async (event, context) => {
     const geminiApiKey = process.env.GEMINI_API_KEY;
     const openaiApiKey = process.env.OPENAI_API_KEY;
 
-    if (!geminiApiKey && action !== 'check-keys') {
+    const anthropicApiKey = process.env.ANTHROPIC_API_KEY;
+
+    // Images and speech only work with Gemini; everything else can also run on Claude
+    const geminiOnly = action === 'generateImage' || action === 'generateSpeech';
+    if (action !== 'check-keys' && !geminiApiKey && (geminiOnly || !anthropicApiKey)) {
       return {
         statusCode: 500,
         headers: corsHeaders,
-        body: JSON.stringify({ error: 'GEMINI_API_KEY not configured' }),
+        body: JSON.stringify({
+          error: geminiOnly ? 'GEMINI_API_KEY not configured' : 'No AI key configured: set GEMINI_API_KEY or ANTHROPIC_API_KEY',
+        }),
       };
     }
+
+    // Text generation: Gemini first, Claude when Gemini fails, returns nothing or has no key
+    const generateText = async (opts: {
+      prompt: string;
+      json?: boolean;
+      maxOutputTokens?: number;
+      system?: string;
+      // Earlier chat turns as { role: 'user' | 'model', text }
+      history?: Array<{ role: string; text: string }>;
+    }): Promise<string> => {
+      if (geminiApiKey) {
+        try {
+          const ai = new GoogleGenAI({ apiKey: geminiApiKey });
+          // With Claude standing by, do not spend long retrying Gemini
+          const text = await callWithRetry(async () => {
+            const response = await ai.models.generateContent({
+              model: 'gemini-2.5-flash',
+              contents: [
+                ...(opts.history || []).map(h => ({ role: h.role === 'user' ? 'user' : 'model', parts: [{ text: h.text }] })),
+                { role: 'user', parts: [{ text: opts.prompt }] },
+              ],
+              config: {
+                ...(opts.system ? { systemInstruction: opts.system } : {}),
+                ...(opts.json ? { responseMimeType: 'application/json' } : {}),
+                ...(opts.maxOutputTokens ? { maxOutputTokens: opts.maxOutputTokens } : {}),
+              },
+            });
+            return response.text;
+          }, anthropicApiKey ? 1 : 3);
+          if (text && text.trim()) return text;
+          if (!anthropicApiKey) return '';
+          console.warn(`[${action}] Gemini returned nothing, trying Claude`);
+        } catch (error: any) {
+          if (!anthropicApiKey) throw error;
+          console.warn(`[${action}] Gemini failed, trying Claude:`, error?.message);
+        }
+      }
+
+      // Claude needs the conversation to open with a user turn
+      const turns = (opts.history || []).filter(h => h.text && h.text.trim());
+      while (turns.length > 0 && turns[0].role !== 'user') turns.shift();
+      return askClaude(anthropicApiKey!, {
+        prompt: opts.prompt,
+        system: opts.system,
+        json: opts.json,
+        history: turns.map(h => ({ role: h.role === 'user' ? 'user' as const : 'assistant' as const, content: h.text })),
+      });
+    };
 
     switch (action) {
       case 'generateLearningMaterial': {
         const { stage, topic, point } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-        
         const prompt = `You are a friendly and enthusiastic IGCSE Mandarin tutor speaking to a teenager. Your goal is to make learning fun and easy to understand.
 
 Generate learning material for:
@@ -363,16 +450,7 @@ See how easy that is? Now you can greet anyone! 😊"
 
 Remember: Make it fun, simple, and full of examples!`;
         
-        const result = await callWithRetry(async () => {
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-              maxOutputTokens: 6000, // Increased for more examples
-            }
-          });
-          return response.text;
-        });
+        const result = await generateText({ prompt, maxOutputTokens: 6000 });
 
         return {
           statusCode: 200,
@@ -383,24 +461,12 @@ Remember: Make it fun, simple, and full of examples!`;
 
       case 'generateExercises': {
         const { stage, topic, point } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-        
         const prompt = `Generate 5-8 exercises for IGCSE Mandarin:
 Stage: ${stage}, Topic: ${topic}, Point: ${point}
 
 Return JSON array with exercises. Each exercise: { "type": "quiz"|"translation", "question": "Chinese text", "questionTranslation": "English", "answer": "...", "options": [...] }`;
         
-        const result = await callWithRetry(async () => {
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 8192,
-            }
-          });
-          return response.text;
-        });
+        const result = await generateText({ prompt, json: true, maxOutputTokens: 8192 });
 
         let text = result || "";
         const parsed = safeJsonParse(text, { exercises: [] });
@@ -415,8 +481,6 @@ Return JSON array with exercises. Each exercise: { "type": "quiz"|"translation",
 
       case 'generateSkillExercises': {
         const { skill, formatIds, words, stage, count, focus } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-
         const formats = EXERCISE_FORMATS.filter(f => f.skill === skill && (formatIds || []).includes(f.id));
         if (formats.length === 0) {
           return {
@@ -437,17 +501,7 @@ ${formats.map(f => `- "${f.id}": ${f.spec}`).join('\n')}
 
 Return a JSON array only. Every object has: "format", "question", "answer", "options" (array, empty when not used), and where the format asks for them "questionTranslation", "audioText", "passage".`;
 
-        const result = await callWithRetry(async () => {
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 8192,
-            }
-          });
-          return response.text;
-        });
+        const result = await generateText({ prompt, json: true, maxOutputTokens: 8192 });
 
         const parsed: any = safeJsonParse(result || "", []);
         const raw: any[] = Array.isArray(parsed) ? parsed : (Array.isArray(parsed.exercises) ? parsed.exercises : []);
@@ -478,8 +532,6 @@ Return a JSON array only. Every object has: "format", "question", "answer", "opt
 
       case 'annotateWords': {
         const { words } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-
         const prompt = `These Mandarin Chinese words and phrases are going into a GCSE/IGCSE word bank.
 For each one give the pinyin with tone marks, a short English meaning, and tags.
 Keep any pinyin or meaning that is already given.
@@ -493,17 +545,7 @@ ${JSON.stringify(words)}
 
 Return a JSON array only, in the same order, of objects: { "word": "...", "pinyin": "...", "meaning": "...", "tags": ["..."] }`;
 
-        const result = await callWithRetry(async () => {
-          const response = await ai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: prompt,
-            config: {
-              responseMimeType: 'application/json',
-              maxOutputTokens: 8192,
-            }
-          });
-          return response.text;
-        });
+        const result = await generateText({ prompt, json: true, maxOutputTokens: 8192 });
 
         const parsed: any = safeJsonParse(result || "", []);
         const annotated = (Array.isArray(parsed) ? parsed : []).map((w: any) => ({
@@ -654,22 +696,12 @@ Return a JSON array only, in the same order, of objects: { "word": "...", "pinyi
 
       case 'generateVocabularyList': {
         const { category } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-        
         const prompt = `Generate a list of 12 common, essential Mandarin vocabulary words for the category: "${category}".
 Target level: IGCSE / HSK 2-3.
 Return ONLY a JSON array with objects containing: character (Simplified Chinese), pinyin (with tone marks), meaning (English).
 Output format: STRICT JSON array. NO markdown. NO trailing commas.`;
         
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-
-        let text = response.text || "[]";
+        let text = (await generateText({ prompt, json: true })) || "[]";
         const parsed = safeJsonParse(text, []);
         const vocabList = Array.isArray(parsed) ? parsed : [];
 
@@ -682,8 +714,6 @@ Output format: STRICT JSON array. NO markdown. NO trailing commas.`;
 
       case 'generateWordDetails': {
         const { character } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-        
         const prompt = `For the Chinese character "${character}", provide:
 - pinyin (with tone marks)
 - meaning (English)
@@ -692,15 +722,7 @@ Output format: STRICT JSON array. NO markdown. NO trailing commas.`;
 
 Return JSON: { "character": "${character}", "pinyin": "...", "meaning": "...", "exampleSentenceCh": "...", "exampleSentenceEn": "..." }`;
         
-        const response = await ai.models.generateContent({
-          model: 'gemini-2.5-flash',
-          contents: prompt,
-          config: {
-            responseMimeType: 'application/json'
-          }
-        });
-        
-        let text = response.text || "{}";
+        let text = (await generateText({ prompt, json: true })) || "{}";
         const parsed = safeJsonParse(text, null);
 
         return {
@@ -712,8 +734,6 @@ Return JSON: { "character": "${character}", "pinyin": "...", "meaning": "...", "
 
       case 'getChatResponse': {
         const { message, contextMaterial, history } = params;
-        const ai = new GoogleGenAI({ apiKey: geminiApiKey! });
-        
         const systemInstruction = `You are a friendly and helpful Mandarin tutor for a teenager. 
 The student is currently interacting with this content:
 ---
@@ -721,20 +741,11 @@ ${contextMaterial.substring(0, 4000)}
 ---
 Answer their questions about this material or Mandarin in general. Keep answers brief, encouraging, and clear.`;
 
-        const chat = ai.chats.create({
-          model: 'gemini-2.5-flash',
-          config: { systemInstruction },
-          history: history.map((h: any) => ({
-            role: h.role,
-            parts: [{ text: h.text }]
-          }))
-        });
-
-        const result = await chat.sendMessage({ message });
+        const result = await generateText({ prompt: message, system: systemInstruction, history: history || [] });
         return {
           statusCode: 200,
           headers: corsHeaders,
-          body: JSON.stringify({ result: result.text || "I didn't catch that." }),
+          body: JSON.stringify({ result: result || "I didn't catch that." }),
         };
       }
 
@@ -786,12 +797,10 @@ Answer their questions about this material or Mandarin in general. Keep answers 
         let finalFeedback = ruleBasedResult.feedback;
         
         // Try to get AI-enhanced feedback if API key is available
-        if (geminiApiKey) {
+        if (geminiApiKey || anthropicApiKey) {
           try {
             // Fetch tutor examples for few-shot learning
             const tutorExamples = await fetchTutorExamples(3);
-            
-            const ai = new GoogleGenAI({ apiKey: geminiApiKey });
             
             // Build tutor examples section if available
             let tutorExamplesSection = '';
@@ -840,16 +849,7 @@ Provide a brief, encouraging feedback message (1-2 sentences) that:
 
 Return ONLY the feedback text, no JSON, no quotes, just the feedback message.`;
 
-            const aiResponse = await callWithRetry(async () => {
-              const response = await ai.models.generateContent({
-                model: 'gemini-2.5-flash',
-                contents: feedbackPrompt,
-                config: {
-                  maxOutputTokens: 200,
-                }
-              });
-              return response.text;
-            }, 1); // Only 1 retry for feedback enhancement
+            const aiResponse = await generateText({ prompt: feedbackPrompt, maxOutputTokens: 200 });
             
             if (aiResponse && aiResponse.trim()) {
               finalFeedback = aiResponse.trim();
@@ -879,7 +879,8 @@ Return ONLY the feedback text, no JSON, no quotes, just the feedback message.`;
           headers: corsHeaders,
           body: JSON.stringify({ 
             geminiConfigured: !!geminiApiKey,
-            openaiConfigured: !!openaiApiKey 
+            openaiConfigured: !!openaiApiKey,
+            anthropicConfigured: !!anthropicApiKey
           }),
         };
       }

@@ -166,7 +166,7 @@ export const generateWordDetails = async (word: string): Promise<WordDetails | n
 };
 
 // Check API key status (for Settings view)
-export const checkApiKeys = async (): Promise<{ geminiConfigured: boolean; openaiConfigured: boolean }> => {
+export const checkApiKeys = async (): Promise<{ geminiConfigured: boolean; openaiConfigured: boolean; anthropicConfigured?: boolean }> => {
   try {
     const result = await callNetlifyFunction('check-keys', {});
     return result || { geminiConfigured: false, openaiConfigured: false };
